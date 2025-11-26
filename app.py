@@ -1,5 +1,7 @@
 import streamlit as st
 import json
+import os
+from openai import OpenAI
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -8,6 +10,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# --- INICIALIZAR CLIENTE OPENAI ---
+@st.cache_resource
+def get_openai_client():
+    return OpenAI()
+
+client = get_openai_client()
 
 # --- CSS CUSTOMIZADO ---
 st.markdown("""
@@ -42,6 +51,13 @@ st.markdown("""
         color: white;
         font-weight: bold;
     }
+    .suggestion-box {
+        background-color: #e8f4f8;
+        border-left: 4px solid #1f77b4;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -49,489 +65,374 @@ st.markdown("""
 st.markdown('<div class="main-header">📋 Assistente de Declaração de Óbito</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Sistema de Auxílio ao Preenchimento do Bloco V - Condições e Causas do Óbito</div>', unsafe_allow_html=True)
 
-# --- BASE DE DADOS DE GARBAGE CODES ---
-garbage_codes_dict = {
-    # Códigos R (Sintomas e sinais)
-    "R99": "Causa desconhecida de mortalidade",
-    "R98": "Morte sem assistência",
-    "R09.2": "Parada respiratória",
-    "R57.9": "Choque não especificado",
-    "R54": "Senilidade",
-    "R64": "Caquexia",
-    "R00-R99": "Sintomas, sinais e achados anormais",
-    
-    # Códigos I (Cardiovascular)
-    "I46": "Parada cardíaca",
-    "I46.0": "Parada cardíaca com ressuscitação bem-sucedida",
-    "I46.1": "Morte cardíaca súbita",
-    "I46.9": "Parada cardíaca não especificada",
-    "I50.9": "Insuficiência cardíaca não especificada",
-    "I51.9": "Cardiopatia não especificada",
-    
-    # Códigos J (Respiratório)
-    "J96.0": "Insuficiência respiratória aguda",
-    "J96.9": "Insuficiência respiratória não especificada",
-    "J98.9": "Transtorno respiratório não especificado",
-    
-    # Códigos A (Infecciosas)
-    "A41.9": "Septicemia não especificada",
-    "A49.9": "Infecção bacteriana não especificada",
-    
-    # Outros códigos mal definidos
-    "N17.9": "Insuficiência renal aguda não especificada (quando sem contexto)",
-    "N19": "Insuficiência renal não especificada",
-}
-
-termos_garbage = [
-    "PARADA CARDÍACA", "PARADA CARDIORESPIRATÓRIA", "PARADA CARDIORESPIRATORIA",
-    "FALÊNCIA DE MÚLTIPLOS ÓRGÃOS", "FALENCIA DE MULTIPLOS ORGAOS",
-    "INSUFICIÊNCIA RESPIRATÓRIA", "INSUFICIENCIA RESPIRATORIA",
-    "SEPSE NÃO ESPECIFICADA", "SEPSE", "CHOQUE SÉPTICO", "CHOQUE SEPTICO",
-    "SENILIDADE", "CAUSA DESCONHECIDA", "MORTE NATURAL",
-    "INSUFICIÊNCIA CARDÍACA", "INSUFICIENCIA CARDIACA",
-    "CAQUEXIA", "DESNUTRIÇÃO", "DESNUTRICAO"
+# --- LISTA DE GARBAGE CODES ---
+GARBAGE_CODES = [
+    "R99", "I46.9", "I50.9", "J96.9", "R09.2", "I51.9", "R57.9", 
+    "I95.9", "R54", "I10", "E14.9", "N18.9", "J44.9", "I25.9",
+    "I64", "C80.9", "K72.9", "N17.9", "I51.6", "R00.1"
 ]
 
-def verificar_garbage_code(texto):
-    """Verifica se o texto contém garbage codes"""
-    if not texto:
-        return False, "", []
+# --- FUNÇÃO PARA VALIDAR GARBAGE CODES ---
+def validar_garbage_code(codigo_cid):
+    """Verifica se um código CID é um garbage code"""
+    if not codigo_cid:
+        return False, ""
     
-    texto_upper = texto.upper().strip()
-    alertas = []
+    codigo_limpo = codigo_cid.strip().upper()
     
-    # Verificar termos
-    for termo in termos_garbage:
-        if termo in texto_upper:
-            alertas.append(f"O termo '{termo}' é considerado um Garbage Code ou termo mal definido para Causa Básica.")
+    for gc in GARBAGE_CODES:
+        if codigo_limpo.startswith(gc):
+            return True, f"⚠️ '{codigo_cid}' é um Garbage Code (código inespecífico). Considere usar um código mais específico."
     
-    # Verificar códigos CID
-    for codigo, descricao in garbage_codes_dict.items():
-        if codigo in texto_upper:
-            alertas.append(f"O código CID '{codigo}' ({descricao}) é considerado um Garbage Code.")
-    
-    if alertas:
-        return True, "\n".join(alertas), alertas
-    
-    return False, "", []
+    return False, "✅ Código válido"
 
-def validar_sequencia_temporal(tempos):
-    """Valida se a sequência temporal faz sentido (opcional)"""
-    # Esta função pode ser expandida para validar a lógica temporal
-    return True
+# --- FUNÇÃO PARA GERAR SUGESTÃO COM IA ---
+def gerar_sugestao_cadeia_causal(resumo_clinico):
+    """Gera sugestão de preenchimento da cadeia causal usando IA"""
+    
+    if not resumo_clinico or len(resumo_clinico.strip()) < 20:
+        return None
+    
+    # Lista de garbage codes para o prompt
+    garbage_codes_str = ", ".join(GARBAGE_CODES)
+    
+    prompt = f"""Você é um assistente médico especializado em preenchimento de Declaração de Óbito (DO).
 
-# --- SIDEBAR COM INFORMAÇÕES ---
+Com base no resumo clínico abaixo, sugira o preenchimento da cadeia causal do Bloco V da Declaração de Óbito, seguindo as normas do Ministério da Saúde do Brasil.
+
+RESUMO CLÍNICO:
+{resumo_clinico}
+
+INSTRUÇÕES IMPORTANTES:
+1. Identifique a cadeia causal seguindo a sequência lógica: Causa Imediata → Causa Intermediária → Causa Básica
+2. Use APENAS códigos CID-10 válidos e específicos
+3. EVITE os seguintes Garbage Codes (códigos inespecíficos): {garbage_codes_str}
+4. A Causa Básica é a doença ou lesão que INICIOU a cadeia de eventos que levou ao óbito
+5. A Causa Imediata é a condição que DIRETAMENTE causou o óbito
+6. Causas Intermediárias são as condições entre a básica e a imediata
+7. Parte II são condições que contribuíram mas não fazem parte da cadeia causal direta
+8. Estime o tempo aproximado entre o início de cada condição e o óbito
+
+RESPONDA APENAS NO FORMATO JSON ABAIXO (sem texto adicional):
+{{
+  "causa_imediata": {{
+    "descricao": "descrição da causa imediata",
+    "cid10": "código CID-10",
+    "tempo": "tempo aproximado (ex: 2 dias, 6 horas)"
+  }},
+  "causa_intermediaria_b": {{
+    "descricao": "descrição da causa intermediária b (se houver)",
+    "cid10": "código CID-10 ou vazio",
+    "tempo": "tempo aproximado ou vazio"
+  }},
+  "causa_intermediaria_c": {{
+    "descricao": "descrição da causa intermediária c (se houver)",
+    "cid10": "código CID-10 ou vazio",
+    "tempo": "tempo aproximado ou vazio"
+  }},
+  "causa_basica": {{
+    "descricao": "descrição da causa básica/original",
+    "cid10": "código CID-10",
+    "tempo": "tempo aproximado"
+  }},
+  "parte_ii": {{
+    "descricao": "outras condições contribuintes (se houver)",
+    "cid10": "códigos CID-10 separados por vírgula ou vazio"
+  }},
+  "justificativa": "breve explicação da lógica da cadeia causal"
+}}"""
+
+    try:
+        with st.spinner("🤖 Analisando resumo clínico e gerando sugestão..."):
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": "Você é um assistente médico especializado em Declaração de Óbito. Responda sempre em JSON válido."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=1000
+            )
+            
+            resposta = response.choices[0].message.content.strip()
+            
+            # Remover possíveis marcadores de código
+            if resposta.startswith("```json"):
+                resposta = resposta[7:]
+            if resposta.startswith("```"):
+                resposta = resposta[3:]
+            if resposta.endswith("```"):
+                resposta = resposta[:-3]
+            
+            resposta = resposta.strip()
+            
+            # Parsear JSON
+            sugestao = json.loads(resposta)
+            return sugestao
+            
+    except Exception as e:
+        st.error(f"❌ Erro ao gerar sugestão: {str(e)}")
+        return None
+
+# --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/International_Flag_of_Planet_Earth.svg/1200px-International_Flag_of_Planet_Earth.svg.png", width=100)
-    st.markdown("### 📚 Sobre o Sistema")
+    st.markdown("## 📚 Sobre o Sistema")
     st.markdown("""
     Este assistente foi desenvolvido para auxiliar médicos no preenchimento correto da **Declaração de Óbito (DO)**, 
     especialmente o **Bloco V** (Condições e Causas do Óbito).
     
     **Funcionalidades:**
+    
     - ✅ Validação de Garbage Codes
+    - ✅ Sugestão automática de cadeia causal com IA
     - ✅ Sugestão de sequência causal
     - ✅ Análise de qualidade
     - ✅ Orientações baseadas em manuais oficiais
     
     **Referências:**
+    
     - Manual SVS/MS 2022
     - Lista de Garbage Codes 2024
     - CID-10
     """)
     
-    st.divider()
-    
-    st.markdown("### 🔒 Privacidade")
-    st.warning("⚠️ **NUNCA** insira dados reais de pacientes (nomes, CPF, etc.). Use apenas informações clínicas anônimas.")
-    
-    st.divider()
-    
-    st.markdown("### 📖 Guia Rápido")
-    with st.expander("Como usar?"):
-        st.markdown("""
-        1. **Insira o resumo clínico** (sem identificação)
-        2. **Preencha a Parte I** da causa mais recente (a) até a causa básica (d)
-        3. **Adicione condições contribuintes** na Parte II
-        4. **Clique em Analisar** para verificar garbage codes
-        5. **Revise as sugestões** e ajuste conforme necessário
-        """)
-    
-    with st.expander("O que são Garbage Codes?"):
-        st.markdown("""
-        São códigos CID ou termos que **não especificam adequadamente** a causa da morte, como:
-        - Parada cardíaca
-        - Insuficiência respiratória
-        - Sepse não especificada
-        - Senilidade
-        
-        Estes devem ser **evitados como causa básica**, pois prejudicam as estatísticas de saúde.
-        """)
+    st.markdown("---")
+    st.markdown("## 🔒 Privacidade")
+    st.warning("""
+    ⚠️ **NUNCA** insira dados reais de pacientes (nomes, CPF, etc.). Use apenas informações clínicas anônimas.
+    """)
 
-# --- CRIAÇÃO DAS ABAS ---
-tab_ferramenta, tab_exemplos, tab_avisos = st.tabs([
-    "🛠️ Assistente de Preenchimento", 
-    "📋 Exemplos Práticos",
-    "⚠️ Avisos Legais e Privacidade"
-])
+# --- ABAS PRINCIPAIS ---
+tab1, tab2, tab3 = st.tabs(["🛠️ Assistente de Preenchimento", "📚 Exemplos Práticos", "⚠️ Avisos Legais e Privacidade"])
 
-# ==============================================================================
-# ABA 1: FERRAMENTA PRINCIPAL
-# ==============================================================================
-with tab_ferramenta:
+# --- ABA 1: ASSISTENTE DE PREENCHIMENTO ---
+with tab1:
     st.markdown("""
-    Este assistente auxilia na organização da **cadeia causal do Bloco V**, 
-    filtrando *Garbage Codes* e sugerindo a sequência lógica conforme as normas do Ministério da Saúde.
+    Este assistente auxilia na organização da **cadeia causal do Bloco V**, filtrando *Garbage Codes* e sugerindo a sequência lógica 
+    conforme as normas do Ministério da Saúde.
     """)
     
-    # --- FORMULÁRIO PRINCIPAL ---
-    with st.form("do_form"):
-        st.subheader("📝 Resumo Clínico (Anônimo)")
-        resumo = st.text_area(
-            "Cole aqui o resumo clínico do caso (sem identificação do paciente):", 
-            height=120,
-            placeholder="Exemplo: Paciente idoso, sexo masculino, com histórico de DPOC há 10 anos, internado por pneumonia bacteriana há 5 dias, evoluiu com insuficiência respiratória e choque séptico..."
-        )
-
-        st.divider()
-        st.subheader("📊 Parte I: Cadeia Causal")
-        st.caption("⚠️ Preencha da consequência final (a) até a causa original (d). A última linha preenchida será considerada a **Causa Básica**.")
-        
-        col1, col2 = st.columns([4, 1])
-        
-        with col1:
-            linha_a = st.text_input(
-                "a) Causa Imediata/Terminal", 
-                placeholder="Ex: Choque séptico",
-                help="A doença ou lesão que levou diretamente à morte"
-            )
-            st.markdown("*Devido ou como consequência de:*")
+    st.markdown("---")
+    
+    # Resumo Clínico
+    st.markdown("### 📝 Resumo Clínico (Anônimo)")
+    resumo_clinico = st.text_area(
+        "Cole aqui o resumo clínico do caso (sem identificação do paciente):",
+        height=150,
+        placeholder="Exemplo: Paciente idoso, sexo masculino, com histórico de DPOC há 10 anos, internado por pneumonia bacteriana há 5 dias, evoluiu com insuficiência respiratória e choque séptico..."
+    )
+    
+    # Botão para gerar sugestão
+    if st.button("🤖 Gerar Sugestão Automática com IA", type="primary"):
+        if resumo_clinico and len(resumo_clinico.strip()) >= 20:
+            sugestao = gerar_sugestao_cadeia_causal(resumo_clinico)
             
-            linha_b = st.text_input(
-                "b) Causa Intermediária", 
-                placeholder="Ex: Pneumonia bacteriana",
-                help="Estado mórbido que produziu a causa acima"
-            )
-            st.markdown("*Devido ou como consequência de:*")
-            
-            linha_c = st.text_input(
-                "c) Causa Intermediária", 
-                placeholder="Ex: (deixar em branco se não houver)",
-                help="Outro estado mórbido intermediário"
-            )
-            st.markdown("*Devido ou como consequência de:*")
-            
-            linha_d = st.text_input(
-                "d) Causa Básica", 
-                placeholder="Ex: Doença pulmonar obstrutiva crônica (DPOC)",
-                help="A doença que iniciou a cadeia de eventos patológicos"
-            )
-        
-        with col2:
-            tempo_a = st.text_input("Tempo (a)", placeholder="Ex: 2 dias")
-            st.write("")
-            st.write("")
-            tempo_b = st.text_input("Tempo (b)", placeholder="Ex: 5 dias")
-            st.write("")
-            st.write("")
-            tempo_c = st.text_input("Tempo (c)", placeholder="Ex: -")
-            st.write("")
-            st.write("")
-            tempo_d = st.text_input("Tempo (d)", placeholder="Ex: 10 anos")
-
-        st.divider()
-        st.subheader("📌 Parte II: Condições Contribuintes")
-        parte_ii = st.text_area(
-            "Outras comorbidades que contribuíram para a morte, mas não causaram diretamente:",
-            placeholder="Ex: Hipertensão arterial sistêmica, Diabetes mellitus tipo 2",
-            height=80
-        )
-
-        submitted = st.form_submit_button("✅ Analisar e Gerar Declaração de Óbito", use_container_width=True)
-
-    # --- LÓGICA DE PROCESSAMENTO ---
-    if submitted:
-        st.divider()
-        
-        # 1. Determinar qual é a Causa Básica (a última linha preenchida)
-        causa_basica = ""
-        origem_basica = ""
-        
-        if linha_d:
-            causa_basica = linha_d
-            origem_basica = "Linha (d)"
-        elif linha_c:
-            causa_basica = linha_c
-            origem_basica = "Linha (c)"
-        elif linha_b:
-            causa_basica = linha_b
-            origem_basica = "Linha (b)"
-        elif linha_a:
-            causa_basica = linha_a
-            origem_basica = "Linha (a)"
+            if sugestao:
+                st.session_state['sugestao_gerada'] = sugestao
+                st.success("✅ Sugestão gerada com sucesso!")
         else:
-            st.error("⚠️ Você precisa preencher pelo menos a Linha (a) - Causa Imediata.")
-            st.stop()
-
-        # 2. Verificar Garbage Code
-        is_gc, msg_gc, alertas = verificar_garbage_code(causa_basica)
-
-        # 3. Exibir Resultado
-        st.markdown("### 📄 Visualização da Declaração de Óbito (Bloco V)")
+            st.warning("⚠️ Por favor, insira um resumo clínico com pelo menos 20 caracteres.")
+    
+    # Exibir sugestão se foi gerada
+    if 'sugestao_gerada' in st.session_state:
+        sugestao = st.session_state['sugestao_gerada']
         
-        col_preview1, col_preview2 = st.columns([3, 1])
+        st.markdown("---")
+        st.markdown("### 💡 Sugestão Gerada pela IA")
         
-        with col_preview1:
-            st.markdown(f"""
-            **PARTE I - CAUSAS DA MORTE**
-            
-            **a) Causa Imediata:**  
-            {linha_a if linha_a else "---"}
-            
-            *Devido ou como consequência de:*
-            
-            **b) Causa Intermediária:**  
-            {linha_b if linha_b else "---"}
-            
-            *Devido ou como consequência de:*
-            
-            **c) Causa Intermediária:**  
-            {linha_c if linha_c else "---"}
-            
-            *Devido ou como consequência de:*
-            
-            **d) Causa Básica:**  
-            {linha_d if linha_d else "---"}
-            
-            ---
-            
-            **PARTE II - OUTRAS CONDIÇÕES CONTRIBUINTES**
-            
-            {parte_ii if parte_ii else "---"}
-            """)
+        st.markdown('<div class="suggestion-box">', unsafe_allow_html=True)
         
-        with col_preview2:
-            st.markdown(f"""
-            **TEMPO**
-            
-            {tempo_a if tempo_a else "---"}
-            
-            
-            
-            {tempo_b if tempo_b else "---"}
-            
-            
-            
-            {tempo_c if tempo_c else "---"}
-            
-            
-            
-            {tempo_d if tempo_d else "---"}
-            """)
-
-        st.divider()
+        # Causa Imediata
+        st.markdown("**a) Causa Imediata/Terminal:**")
+        st.info(f"**{sugestao['causa_imediata']['descricao']}** - CID: {sugestao['causa_imediata']['cid10']} - Tempo: {sugestao['causa_imediata']['tempo']}")
+        is_gc, msg = validar_garbage_code(sugestao['causa_imediata']['cid10'])
+        if is_gc:
+            st.warning(msg)
         
-        # 4. Análise de Qualidade
-        st.subheader("🔍 Análise de Qualidade e Auditoria")
-        
-        col_analise1, col_analise2 = st.columns(2)
-        
-        with col_analise1:
-            st.markdown("#### 📌 Causa Básica Identificada")
-            st.info(f"**{origem_basica}:** {causa_basica}")
-            
+        # Causa Intermediária B
+        if sugestao['causa_intermediaria_b']['descricao']:
+            st.markdown("**b) Causa Intermediária:**")
+            st.info(f"**{sugestao['causa_intermediaria_b']['descricao']}** - CID: {sugestao['causa_intermediaria_b']['cid10']} - Tempo: {sugestao['causa_intermediaria_b']['tempo']}")
+            is_gc, msg = validar_garbage_code(sugestao['causa_intermediaria_b']['cid10'])
             if is_gc:
-                st.error("❌ **ALERTA DE GARBAGE CODE DETECTADO**")
-                for alerta in alertas:
-                    st.warning(f"⚠️ {alerta}")
-                
-                st.markdown("""
-                **👉 Ação Recomendada:**  
-                Volte ao prontuário e tente identificar a **doença específica** que causou este evento.
-                
-                **Exemplos de substituição:**
-                - ❌ Parada cardíaca → ✅ Infarto agudo do miocárdio
-                - ❌ Insuficiência respiratória → ✅ Pneumonia bacteriana
-                - ❌ Sepse → ✅ Sepse por foco urinário (pielonefrite)
-                """)
-            else:
-                st.success("✅ **Causa Básica Aparentemente Válida**")
-                st.markdown(f"A causa informada em **{origem_basica}** parece ser específica e adequada.")
+                st.warning(msg)
         
-        with col_analise2:
-            st.markdown("#### ⏱️ Validação Temporal")
-            tempos_preenchidos = [t for t in [tempo_a, tempo_b, tempo_c, tempo_d] if t]
-            if len(tempos_preenchidos) >= 2:
-                st.success(f"✅ {len(tempos_preenchidos)} intervalos de tempo informados")
-                st.info("Certifique-se de que a sequência temporal faz sentido cronológico (da mais recente para a mais antiga).")
-            else:
-                st.warning("⚠️ Considere preencher os tempos aproximados para melhor qualidade dos dados.")
-            
-            st.markdown("#### 📋 Resumo Clínico")
-            if resumo:
-                st.success("✅ Resumo clínico fornecido")
-            else:
-                st.warning("⚠️ Resumo clínico não fornecido")
-
-        st.divider()
+        # Causa Intermediária C
+        if sugestao['causa_intermediaria_c']['descricao']:
+            st.markdown("**c) Causa Intermediária:**")
+            st.info(f"**{sugestao['causa_intermediaria_c']['descricao']}** - CID: {sugestao['causa_intermediaria_c']['cid10']} - Tempo: {sugestao['causa_intermediaria_c']['tempo']}")
+            is_gc, msg = validar_garbage_code(sugestao['causa_intermediaria_c']['cid10'])
+            if is_gc:
+                st.warning(msg)
         
-        # 5. Observações Finais
-        st.markdown("### 💡 Observações e Recomendações")
-        st.info("""
-        **Lembre-se:**
-        - Esta é uma **sugestão automática** baseada nos manuais oficiais
-        - A **decisão final** é sempre do médico atestante
-        - Verifique se a sequência causal faz sentido clínico e temporal
-        - Evite termos vagos e códigos mal definidos (Garbage Codes)
-        - Consulte o prontuário completo antes de finalizar
-        """)
+        # Causa Básica
+        st.markdown("**d) Causa Básica/Original:**")
+        st.info(f"**{sugestao['causa_basica']['descricao']}** - CID: {sugestao['causa_basica']['cid10']} - Tempo: {sugestao['causa_basica']['tempo']}")
+        is_gc, msg = validar_garbage_code(sugestao['causa_basica']['cid10'])
+        if is_gc:
+            st.warning(msg)
         
-        st.caption("📚 Referências: Manual de Instruções para Preenchimento da DO (SVS/MS - 2022) | Lista de Garbage Codes (SVS/DASNT - 2024)")
-
-# ==============================================================================
-# ABA 2: EXEMPLOS PRÁTICOS
-# ==============================================================================
-with tab_exemplos:
-    st.markdown("### 📋 Exemplos Práticos de Preenchimento")
+        # Parte II
+        if sugestao['parte_ii']['descricao']:
+            st.markdown("**Parte II - Outras Condições:**")
+            st.info(f"**{sugestao['parte_ii']['descricao']}** - CID: {sugestao['parte_ii']['cid10']}")
+        
+        # Justificativa
+        st.markdown("**📋 Justificativa da Cadeia Causal:**")
+        st.success(sugestao['justificativa'])
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.info("💡 **Dica:** Você pode editar e ajustar a sugestão acima conforme necessário. Sempre revise criticamente antes de usar.")
     
-    st.markdown("#### ✅ Exemplo 1: Óbito por Infarto Agudo do Miocárdio")
+    st.markdown("---")
+    
+    # Formulário manual (mantido para edição)
+    st.markdown("### 📊 Parte I: Cadeia Causal")
+    st.info("⚠️ Preencha da consequência final (a) até a causa original (d). A última linha preenchida será considerada a **Causa Básica**.")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        causa_a = st.text_input("a) Causa Imediata/Terminal", placeholder="Ex: Choque séptico")
+    with col2:
+        tempo_a = st.text_input("Tempo (a)", placeholder="Ex: 2 dias")
+    
+    if causa_a:
+        is_garbage, mensagem = validar_garbage_code(causa_a)
+        if is_garbage:
+            st.warning(mensagem)
+        else:
+            st.success(mensagem)
+    
+    st.markdown("*Devido ou como consequência de:*")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        causa_b = st.text_input("b) Causa Intermediária", placeholder="Ex: Pneumonia bacteriana")
+    with col2:
+        tempo_b = st.text_input("Tempo (b)", placeholder="Ex: 7 dias")
+    
+    if causa_b:
+        is_garbage, mensagem = validar_garbage_code(causa_b)
+        if is_garbage:
+            st.warning(mensagem)
+        else:
+            st.success(mensagem)
+    
+    st.markdown("*Devido ou como consequência de:*")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        causa_c = st.text_input("c) Causa Intermediária (opcional)", placeholder="Ex: DPOC")
+    with col2:
+        tempo_c = st.text_input("Tempo (c)", placeholder="Ex: 10 anos")
+    
+    if causa_c:
+        is_garbage, mensagem = validar_garbage_code(causa_c)
+        if is_garbage:
+            st.warning(mensagem)
+        else:
+            st.success(mensagem)
+    
+    st.markdown("*Devido ou como consequência de:*")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        causa_d = st.text_input("d) Causa Básica/Original", placeholder="Ex: Tabagismo")
+    with col2:
+        tempo_d = st.text_input("Tempo (d)", placeholder="Ex: 30 anos")
+    
+    if causa_d:
+        is_garbage, mensagem = validar_garbage_code(causa_d)
+        if is_garbage:
+            st.warning(mensagem)
+        else:
+            st.success(mensagem)
+    
+    st.markdown("---")
+    st.markdown("### 📊 Parte II: Outras Condições Contribuintes")
+    st.info("Condições significativas que contribuíram para o óbito, mas não fazem parte da cadeia causal direta.")
+    
+    parte_ii = st.text_area(
+        "Outras condições (Parte II)",
+        placeholder="Ex: Hipertensão arterial sistêmica, Diabetes mellitus tipo 2",
+        height=80
+    )
+    
+    if parte_ii:
+        codigos_parte_ii = [c.strip() for c in parte_ii.split(',')]
+        for codigo in codigos_parte_ii:
+            is_garbage, mensagem = validar_garbage_code(codigo)
+            if is_garbage:
+                st.warning(f"{codigo}: {mensagem}")
+
+# --- ABA 2: EXEMPLOS PRÁTICOS ---
+with tab2:
+    st.markdown("## 📚 Exemplos Práticos de Preenchimento")
+    
+    st.markdown("### Exemplo 1: Óbito por Complicação de Doença Crônica")
     st.code("""
-PARTE I:
-a) Choque cardiogênico (Tempo: 6 horas)
-   Devido ou como consequência de:
-b) Infarto agudo do miocárdio (Tempo: 2 dias)
-   Devido ou como consequência de:
-c) ---
-   Devido ou como consequência de:
-d) Doença arterial coronariana (Tempo: 5 anos)
+Resumo: Paciente idoso, diabético há 15 anos, internado por pneumonia bacteriana 
+há 7 dias, evoluiu com choque séptico e óbito.
 
-PARTE II:
-Hipertensão arterial sistêmica, Diabetes mellitus tipo 2
-    """, language="text")
+Preenchimento:
+a) Causa Imediata: Choque séptico (CID A41.9) - Tempo: 2 dias
+b) Causa Intermediária: Pneumonia bacteriana (CID J15.9) - Tempo: 7 dias
+c) Causa Básica: Diabetes mellitus tipo 2 (CID E11.9) - Tempo: 15 anos
+
+Parte II: Hipertensão arterial sistêmica (CID I10), Obesidade (CID E66.9)
+    """)
     
-    st.divider()
-    
-    st.markdown("#### ✅ Exemplo 2: Óbito por Pneumonia em paciente com DPOC")
+    st.markdown("### Exemplo 2: Óbito por Acidente de Trânsito")
     st.code("""
-PARTE I:
-a) Choque séptico (Tempo: 1 dia)
-   Devido ou como consequência de:
-b) Pneumonia bacteriana (Tempo: 5 dias)
-   Devido ou como consequência de:
-c) ---
-   Devido ou como consequência de:
-d) Doença pulmonar obstrutiva crônica (DPOC) (Tempo: 10 anos)
+Resumo: Vítima de acidente automobilístico, traumatismo cranioencefálico grave, 
+evoluiu com edema cerebral e herniação.
 
-PARTE II:
-Tabagismo, Hipertensão arterial sistêmica
-    """, language="text")
-    
-    st.divider()
-    
-    st.markdown("#### ❌ Exemplo de Preenchimento INCORRETO (com Garbage Codes)")
-    st.code("""
-PARTE I:
-a) Parada cardiorrespiratória (❌ GARBAGE CODE)
-   Devido ou como consequência de:
-b) Falência de múltiplos órgãos (❌ GARBAGE CODE)
-   Devido ou como consequência de:
-c) ---
-   Devido ou como consequência de:
-d) Senilidade (❌ GARBAGE CODE)
+Preenchimento:
+a) Causa Imediata: Herniação cerebral (CID G93.5) - Tempo: 6 horas
+b) Causa Intermediária: Edema cerebral (CID G93.6) - Tempo: 12 horas
+c) Causa Básica: Traumatismo cranioencefálico - acidente de trânsito (CID S06.9) - Tempo: 1 dia
 
-PARTE II:
----
-
-⚠️ PROBLEMA: Todos os termos são vagos e não especificam a doença real que causou a morte.
-    """, language="text")
-    
-    st.divider()
-    
-    st.markdown("#### 💡 Dicas Importantes")
-    st.markdown("""
-    1. **Causa Imediata (a)** ≠ Mecanismo de morte
-       - ❌ Parada cardíaca (mecanismo)
-       - ✅ Infarto agudo do miocárdio (doença)
-    
-    2. **Causa Básica (d)** = A doença que iniciou tudo
-       - Deve ser a mais específica possível
-       - Evite termos como "senilidade", "idade avançada"
-    
-    3. **Sequência lógica temporal**
-       - Os tempos devem fazer sentido (de cima para baixo: mais recente → mais antigo)
-    
-    4. **Parte II** = Comorbidades importantes
-       - Não fazem parte da cadeia direta
-       - Mas contribuíram para a morte
+Parte II: (vazio, se não houver condições prévias relevantes)
     """)
 
-# ==============================================================================
-# ABA 3: AVISOS LEGAIS
-# ==============================================================================
-with tab_avisos:
-    st.error("⚠️ LEIA COM ATENÇÃO ANTES DE USAR")
+# --- ABA 3: AVISOS LEGAIS ---
+with tab3:
+    st.markdown("## ⚠️ Avisos Legais e Privacidade")
     
-    st.markdown("### 🔒 1. Proteção de Dados e Privacidade (LGPD)")
-    st.markdown("""
-    **É ESTRITAMENTE PROIBIDO INSERIR DADOS REAIS DE PACIENTES.**
+    st.error("""
+    ### 🔒 PRIVACIDADE E PROTEÇÃO DE DADOS
     
-    - **Não insira:** Nomes, CPF, Cartão SUS, Endereços, Datas de Nascimento exatas ou quaisquer outros dados que permitam a identificação de uma pessoa.
-    - **Utilize apenas:** O resumo clínico genérico (ex: "Paciente idoso, sexo masculino, com histórico de DPOC...").
-    - Este aplicativo **não armazena** as informações inseridas após o fechamento da aba, processando tudo localmente ou de forma efêmera.
-    - **Responsabilidade:** O usuário é o único responsável por garantir que nenhum dado pessoal seja inserido no sistema.
+    - **NUNCA** insira dados reais de pacientes (nomes, CPF, endereços, números de prontuário, etc.)
+    - Use **APENAS** informações clínicas anônimas e resumidas
+    - Este sistema **NÃO armazena** dados permanentemente
+    - Todas as informações são processadas em tempo real e descartadas após o uso
     """)
     
-    st.divider()
-
-    st.markdown("### ⚖️ 2. Isenção de Responsabilidade Médica")
-    st.markdown("""
-    Esta ferramenta fornece apenas uma **ORIENTAÇÃO** de preenchimento baseada nos manuais oficiais do Ministério da Saúde (MS) e na Classificação Internacional de Doenças (CID-10).
+    st.warning("""
+    ### 📜 RESPONSABILIDADE PROFISSIONAL
     
-    - **O aplicativo NÃO substitui o julgamento clínico.**
-    - É de **inteira e exclusiva responsabilidade do médico atestante** analisar o caso, verificar a veracidade das informações e decidir a melhor sequência causal para a Declaração de Óbito.
-    - Os desenvolvedores **não se responsabilizam** por eventuais erros éticos, jurídicos ou administrativos decorrentes do uso desta ferramenta.
-    - Este sistema é uma **ferramenta de apoio educacional** e não deve ser utilizado como única fonte de decisão.
-    """)
-
-    st.divider()
-    
-    st.markdown("### 📚 3. Fontes de Referência")
-    st.markdown("""
-    Este aplicativo foi desenvolvido com base nas seguintes referências oficiais:
-    
-    - **Manual de Instruções para Preenchimento da Declaração de Óbito** (SVS/MS - 2022)
-    - **Lista de Garbage Codes** (SVS/DASNT - 2024)
-    - **Classificação Estatística Internacional de Doenças e Problemas Relacionados à Saúde** (CID-10)
-    - **Portaria nº 116/2009** - Regulamenta a coleta de dados, fluxo e periodicidade de envio das informações sobre óbitos
+    - Este é um **assistente de apoio à decisão**, não substitui o julgamento clínico
+    - A **responsabilidade final** pelo preenchimento correto da DO é do **médico atestante**
+    - Sempre consulte os **manuais oficiais** em casos de dúvida
+    - As sugestões geradas pela IA devem ser **revisadas criticamente**
     """)
     
-    st.divider()
+    st.info("""
+    ### 📚 REFERÊNCIAS OFICIAIS
     
-    st.markdown("### 👨‍⚕️ 4. Público-Alvo")
-    st.markdown("""
-    Este aplicativo é destinado **exclusivamente a profissionais médicos** habilitados para o preenchimento de Declarações de Óbito, conforme legislação vigente.
-    
-    - Médicos atestantes
-    - Médicos auditores
-    - Profissionais de vigilância epidemiológica
-    - Estudantes de medicina (para fins educacionais)
-    """)
-    
-    st.divider()
-    
-    st.markdown("### 🔄 5. Atualizações e Manutenção")
-    st.markdown("""
-    - Este aplicativo pode ser atualizado periodicamente para refletir mudanças nas normas e manuais oficiais
-    - Não há garantia de disponibilidade contínua do serviço
-    - Recomenda-se sempre consultar as fontes oficiais mais recentes
+    - Manual de Instruções para o Preenchimento da Declaração de Óbito (SVS/MS 2022)
+    - Lista de Garbage Codes 2024
+    - Classificação Internacional de Doenças - 10ª Revisão (CID-10)
+    - Portarias e normas técnicas do Ministério da Saúde
     """)
 
 # --- RODAPÉ ---
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; padding: 20px; color: #666;'>
-    <p style='margin: 5px;'><strong>Desenvolvido por Manus IA e Dr. Auro Júnior</strong></p>
-    <p style='margin: 5px;'>Instagram: <a href='https://www.instagram.com/auropaiva/' target='_blank'>@auropaiva</a></p>
-    <p style='margin: 5px; font-size: 0.9rem;'>📚 Sistema baseado em manuais oficiais do Ministério da Saúde | 🔒 Privacidade garantida - Sem armazenamento de dados</p>
+<div style="text-align: center; padding: 20px; color: #666;">
+    <p><strong>Desenvolvido por Manus IA e Dr. Auro Júnior</strong></p>
+    <p>Instagram: <a href="https://www.instagram.com/auropaiva/" target="_blank">@auropaiva</a></p>
 </div>
 """, unsafe_allow_html=True)
