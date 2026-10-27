@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evolução do Diarista (offline)</title>
+<style>
+/* Layout: entrada (texto cru do prontuário, em monoespaçado) à esquerda; avaliação gerada (serifada, como documento) à direita. Empilha no celular. Sem fontes externas: tudo do sistema, para rodar em rede fechada. */
+:root{
+  color-scheme:light;
+  --bg:#F2F5F7; --surface:#FFFFFF; --field:#F8FAFB; --ink:#16222D; --muted:#586979; --line:#D5DDE4;
+  --accent:#1B5C78; --accent-ink:#FFFFFF; --accent-soft:#E3EFF4;
+  --warn-bg:#FFF5E0; --warn-ink:#6B4300; --warn-line:#E6C27C; --crit:#A12B2B; --ok:#2C6B3F;
+  --font-ui:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --font-raw:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+  --font-doc:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0E151B; --surface:#16202A; --field:#111A22; --ink:#E5ECF1; --muted:#92A3B2; --line:#2A3A47;
+    --accent:#6DB8D6; --accent-ink:#0A1A23; --accent-soft:#17303C;
+    --warn-bg:#2A2112; --warn-ink:#F0CE8C; --warn-line:#5C4620; --crit:#FF9E98; --ok:#8FD3A2;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0E151B; --surface:#16202A; --field:#111A22; --ink:#E5ECF1; --muted:#92A3B2; --line:#2A3A47;
+  --accent:#6DB8D6; --accent-ink:#0A1A23; --accent-soft:#17303C;
+  --warn-bg:#2A2112; --warn-ink:#F0CE8C; --warn-line:#5C4620; --crit:#FF9E98; --ok:#8FD3A2;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font-ui)}
+.app{max-width:1260px;margin:0 auto;padding:22px max(16px,env(safe-area-inset-right,0px)) 48px max(16px,env(safe-area-inset-left,0px))}
+header.top{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:flex-start;justify-content:space-between;margin-bottom:18px}
+h1{margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em}
+.sub{margin:4px 0 0;color:var(--muted);max-width:62ch;font-size:14px}
+.badge{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ok);border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;white-space:nowrap}
+.badge i{width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block}
+.grid{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
+@media (min-width:980px){.grid{grid-template-columns:minmax(0,5fr) minmax(0,6fr);align-items:start}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.panel-h{margin:0 0 12px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;min-width:0}
+.field-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.field label.name{font-weight:600;font-size:13.5px}
+.field .count{font:400 11.5px var(--font-raw);color:var(--muted);white-space:nowrap}
+.field .hint{font-size:12.5px;color:var(--muted);margin:0}
+textarea.raw{width:100%;min-height:132px;max-height:46vh;resize:vertical;font:400 12.5px/1.55 var(--font-raw);color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+textarea.raw::placeholder{color:var(--muted);opacity:.8}
+textarea:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.opts{display:flex;flex-wrap:wrap;gap:12px 22px;align-items:center;padding:12px 0 4px;border-top:1px solid var(--line);margin-top:6px}
+.opt{display:flex;align-items:center;gap:8px;font-size:13px}
+.opt .lbl{color:var(--muted)}
+.seg{display:inline-flex;position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{padding:5px 12px;border:1px solid var(--line);margin-left:-1px;cursor:pointer;font-size:13px;background:var(--surface);color:var(--ink)}
+.seg label:first-of-type{border-radius:7px 0 0 7px;margin-left:0}
+.seg label:last-of-type{border-radius:0 7px 7px 0}
+.seg input:checked+label{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);position:relative;z-index:1}
+.seg input:focus-visible+label{outline:2px solid var(--accent);outline-offset:2px;z-index:2}
+input[type=date]{font:400 13px var(--font-ui);color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:7px;padding:4px 8px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.btn{font:600 13.5px var(--font-ui);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.out{display:flex;flex-direction:column;gap:12px;min-width:0}
+.out-bar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
+.out-bar h2{margin:0;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.status{min-height:22px;font-size:13px;color:var(--muted)}
+.status.warn{color:var(--crit)}
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px 8px;min-width:0}
+.sec-main{border-color:var(--accent);border-width:1.5px}
+.sec-h{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.sec-h h3{margin:0;font-size:11.5px;font-weight:600;letter-spacing:.08em;color:var(--muted)}
+.sec-main .sec-h h3{color:var(--accent)}
+.sec-tools{display:flex;align-items:center;gap:10px}
+.wc{font:400 11.5px var(--font-raw);color:var(--muted)}
+textarea.doc{display:block;width:100%;resize:none;overflow:hidden;border:0;background:transparent;color:var(--ink);font:400 16px/1.62 var(--font-doc);padding:6px 0 8px;min-height:48px}
+textarea.doc::placeholder{color:var(--muted);opacity:.65;font-style:italic}
+textarea.doc:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.sec-main textarea.doc{font-size:17px}
+.gaps{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;padding:14px 16px;color:var(--warn-ink)}
+.gaps h3{margin:0 0 8px;font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.gaps ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:13.5px}
+.gaps li.alert{color:var(--crit);font-weight:600}
+details.recog{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 16px}
+details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--accent)}
+.recog dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 18px;margin:12px 0 4px}
+.recog dt{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.recog dd{margin:0;font-size:13px;overflow-wrap:anywhere}
+.recog dd.none{color:var(--muted);font-style:italic}
+.foot{margin:6px 0 0;font-size:12px;color:var(--muted);max-width:74ch}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>Evolução do Diarista</h1>
+      <p class="sub">Cole a evolução, o balanço hídrico e os exames do prontuário. O app filtra o que importa e monta a avaliação em texto corrido, com o motivo de permanência em UTI.</p>
+    </div>
+    <span class="badge"><i></i>Roda neste computador. Sem internet e sem IA.</span>
+  </header>
+
+  <main class="grid">
+    <section class="panel" aria-labelledby="h-in">
+      <h2 class="panel-h" id="h-in">Dados do prontuário</h2>
+
+      <div class="field">
+        <div class="field-top"><label class="name" for="f-evo">Evolução</label><span class="count" id="c-evo">0 car.</span></div>
+        <p class="hint">Evolução do plantonista e/ou do dia anterior, como está no prontuário.</p>
+        <textarea class="raw" id="f-evo" spellcheck="false" placeholder="Cole aqui o texto da evolução médica…"></textarea>
+      </div>
+      <div class="field">
+        <div class="field-top"><label class="name" for="f-bh">Balanço hídrico e controles</label><span class="count" id="c-bh">0 car.</span></div>
+        <p class="hint">BH, diurese, sinais vitais das últimas 24 h (PAM e PAS mín./máx.), glicemias, suporte ventilatório.</p>
+        <textarea class="raw" id="f-bh" spellcheck="false" placeholder="Cole aqui o balanço hídrico e os controles de enfermagem…"></textarea>
+      </div>
+      <div class="field">
+        <div class="field-top"><label class="name" for="f-exa">Exames</label><span class="count" id="c-exa">0 car.</span></div>
+        <p class="hint">Uma linha por data, ex.: 26/10: Cr 1,20 | K 3,4 | PCR 20. Imagem e culturas em linhas separadas.</p>
+        <textarea class="raw" id="f-exa" spellcheck="false" placeholder="Cole aqui os exames laboratoriais, de imagem e culturas…"></textarea>
+      </div>
+      <div class="field">
+        <div class="field-top"><label class="name" for="f-ctx">Sumário anterior ou observações <span style="font-weight:400;color:var(--muted)">(opcional)</span></label><span class="count" id="c-ctx">0 car.</span></div>
+        <p class="hint">Data da internação (ex.: "internação em 17/10"), sumário do dia anterior, ou algo que você quer que conste.</p>
+        <textarea class="raw" id="f-ctx" spellcheck="false" style="min-height:84px" placeholder="Ex.: internação hospitalar em 17/10; sumário de ontem…"></textarea>
+      </div>
+
+      <div class="opts">
+        <div class="opt" role="radiogroup" aria-labelledby="l-size">
+          <span class="lbl" id="l-size">Sumário</span>
+          <span class="seg">
+            <input type="radio" name="size" id="sz-curta" value="curta"><label for="sz-curta">Curto</label>
+            <input type="radio" name="size" id="sz-padrao" value="padrao" checked><label for="sz-padrao">Padrão</label>
+            <input type="radio" name="size" id="sz-detalhada" value="detalhada"><label for="sz-detalhada">Detalhado</label>
+          </span>
+        </div>
+        <div class="opt"><label class="lbl" for="f-date">Data</label><input type="date" id="f-date"></div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn primary" id="b-gen">Gerar avaliação</button>
+        <button type="button" class="btn ghost" id="b-example">Carregar caso de exemplo</button>
+        <button type="button" class="btn ghost" id="b-clear">Limpar tudo</button>
+      </div>
+    </section>
+
+    <section class="out" aria-labelledby="h-out">
+      <div class="out-bar">
+        <h2 id="h-out">Avaliação do diarista</h2>
+        <button type="button" class="btn sm" id="b-copyall">Copiar tudo</button>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite">Cole os dados e clique em Gerar avaliação.</div>
+      <div id="secs" class="out"></div>
+      <div class="gaps" id="gaps" hidden>
+        <h3>Para completar antes de assinar</h3>
+        <ul id="gaps-ul"></ul>
+      </div>
+      <details class="recog" id="recog" hidden>
+        <summary>Dados que o app reconheceu nos textos colados</summary>
+        <dl id="recog-dl"></dl>
+      </details>
+      <p class="foot">Nada sai deste computador: o app não usa internet nem IA. Ele localiza números, escores, datas e tendências nos textos colados e monta as frases por regras, sem acrescentar dado que você não colou. Não interpreta o quadro como um médico. Confira e edite antes de usar no prontuário.</p>
+    </section>
+  </main>
+</div>
+
+<script>
+/* Motor de regras do Evolução do Diarista (sem IA, sem rede).
+   Entrada: textos colados do prontuário. Saída: 4 seções + lacunas + dados reconhecidos.
+   Princípio: nunca inventar. Só entra no texto o que foi encontrado nos dados colados. */
+(function (root) {
+  'use strict';
+
+  var CAP = 'A-ZÁÀÂÃÉÊÍÓÔÕÚÇ';
+
+  /* ---------- utilidades ---------- */
+  function toNum(s) {
+    if (s == null) return NaN;
+    s = String(s).trim().replace(/\s/g, '').replace(/[−–]/g, '-');
+    if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(',', '.');
+    return parseFloat(s);
+  }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function fmtDM(d) { return pad(d.getDate()) + '/' + pad(d.getMonth() + 1); }
+  function parseISO(s) { var p = s.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); }
+  function dmToDate(str, ref) {
+    var m = String(str).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+    if (!m) return null;
+    var y = m[3] ? Number(m[3]) : ref.getFullYear();
+    if (y < 100) y += 2000;
+    var d = new Date(y, Number(m[2]) - 1, Number(m[1]));
+    if (!m[3] && d.getTime() > ref.getTime() + 86400000) d = new Date(y - 1, d.getMonth(), d.getDate());
+    return d;
+  }
+  function daysBetween(a, b) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
+  function cap1(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function lc1(s) { return s ? s.charAt(0).toLowerCase() + s.slice(1) : s; }
+  function listJoin(a) {
+    if (a.length <= 1) return a.join('');
+    return a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1];
+  }
+  function fmtInt(n) { return Math.round(n).toLocaleString('pt-BR'); }
+  function fmtDec(n) { return String(Math.round(n * 10) / 10).replace('.', ','); }
+  function uniq(a) { var seen = {}; return a.filter(function (x) { if (seen[x]) return false; seen[x] = 1; return true; }); }
+  function endDot(s) { s = s.trim().replace(/[\s;,]+$/, ''); return /[.!?]$/.test(s) ? s : s + '.'; }
+  function cleanSpaces(s) { return s.replace(/[ \t]+/g, ' ').replace(/\s+([,.;:])/g, '$1').trim(); }
+
+  /* ---------- limpeza e frases ---------- */
+  var NOISE_HDR = /^(paciente|nome|pront(?:u[aá]rio)?|leito|prec|data|m[eé]dico|plantonista|equipe|assinado|dr\.?|dra\.?|crm)\s*:/i;
+  function isNoise(line) {
+    if (NOISE_HDR.test(line)) {
+      if (/^(paciente|nome)\s*:/i.test(line)) {
+        if (/pront|cpf|nasc|leito|\bDN\b|registro|\[|(?:^|:\s*)(?:[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][^\s,]*\s+){1,}[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][^\s,]*/.test(line.replace(/^(paciente|nome)\s*:\s*/i, ': '))) return true;
+        return false;
+      }
+      return true;
+    }
+    if (/^evolu[çc][ãa]o\b/i.test(line) && line.length < 70 && !/[.,;]/.test(line)) return true;
+    var letters = line.replace(/[^A-Za-zÀ-ÿ]/g, '');
+    if (letters.length >= 8) {
+      var up = letters.replace(/[^A-ZÀ-Þ]/g, '').length;
+      if (up / letters.length >= 0.75 && !/[.!?]$/.test(line)) return true;
+    }
+    return false;
+  }
+  function cleanLines(text) {
+    return String(text || '').replace(/\r/g, '').replace(/ /g, ' ').split('\n')
+      .map(function (l) { return l.replace(/^[\s•\-*]+/, '').trim(); })
+      .filter(function (l) { return l && !isNoise(l); });
+  }
+  function sentencesOf(lines) {
+    var out = [];
+    lines.forEach(function (line) {
+      line.split(/(?<=[.!?])\s+(?=[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ0-9])/).forEach(function (s) {
+        s = s.trim().replace(/[.\s]+$/, '');
+        if (s.length > 2) out.push(s);
+      });
+    });
+    return out;
+  }
+
+  /* ---------- expressões genéricas (mini-protocolo e exemplo de redação) ---------- */
+  var GENERIC = [
+    { re: /\b(?:paciente\s+)?(?:segue|mant[eé]m-se|encontra-se|permanece)\s+em\s+(?:bom|regular|grave|muito grave|razo[áa]vel)\s+estado\s+geral\b/gi, label: 'grave/regular estado geral' },
+    { re: /\b(?:em\s+)?(?:bom|regular|grave|muito grave)\s+estado\s+geral\b/gi, label: 'estado geral' },
+    { re: /\b(?:com\s+)?boa\s+curva\s+press[óo]rica\b/gi, label: 'boa curva pressórica' },
+    { re: /\bestabilidade\s+hemodin[âa]mica\b/gi, label: 'estabilidade hemodinâmica' },
+    { re: /\b(?:segue|mant[eé]m-se|permanece)?\s*est[áa]vel\s+hemodinamicamente\b|\bhemodinamicamente\s+est[áa]vel\b/gi, label: 'estável hemodinamicamente' },
+    { re: /\b(?:segue|mant[eé]m-se|permanece)\s+est[áa]vel\b|\bpaciente\s+est[áa]vel\b/gi, label: 'estável' },
+    { re: /\b(?:com\s+)?oximetria\s+satisfat[óo]ria\b/gi, label: 'oximetria satisfatória' },
+    { re: /\bsem\s+intercorr[êe]ncias(?:\s+not[áa]veis)?\b/gi, label: 'sem intercorrências' },
+    { re: /\b(?:evolui|evoluindo)\s+bem\b|\bboa\s+evolu[çc][ãa]o\b|\bmelhora\s+cl[íi]nica\b/gi, label: 'evolução/melhora sem dado' }
+  ];
+  function degeneric(s, removed) {
+    var t = s;
+    GENERIC.forEach(function (g) {
+      if (g.re.test(t)) { removed.push(g.label); }
+      g.re.lastIndex = 0;
+      t = t.replace(g.re, ' ');
+    });
+    t = t.replace(/\s+/g, ' ').replace(/(^|[,;:])\s*[,;:]+/g, '$1').replace(/^[\s,;:.\-]+/, '').replace(/[\s,;:]+$/, '');
+    t = t.replace(/^(?:j[áa]|e|mas|por[ée]m|ainda|com)\s+/i, '');
+    t = cleanSpaces(t);
+    if (t.replace(/[^A-Za-zÀ-ÿ]/g, '').length < 6) return '';
+    return cap1(t);
+  }
+
+  /* ---------- sistemas ---------- */
+  var SYS = [
+    { k: 'neuro', re: /Glasgow|\bECG\s*\d|RASS|seda[çc][ãa]o|sedad|v[ií]gil|consciente|orientad|rebaix|delirium|CAM-ICU|NIHSS|pupila|d[eé]ficit|convuls|agitad|sonolent|colaborativ|confus/i },
+    { k: 'hemo', re: /\bPAM\b|\bPAS\b|press[ãa]o arterial|\bDVA\b|vasopressor|vasoativa|noradrenalina|norepinefrina|vasopressina|dobutamina|\bFC\b|taquicardi|bradicardi|arritmia|\bFA\b|hemodin|choque|troponina|\bECG\b(?!\s*\d)/i },
+    { k: 'resp', re: /\bO2\b|oxig|\bCN\b|cateter nasal|m[áa]scara|\bVNI\b|BiPAP|CPAP|\bVM\b|ventila|\bIOT\b|\bTOT\b|\bTQT\b|traqueo|extuba|intuba|SpO2|satura[çc]|dispneia|\bFR\b|taquip|eupne|tosse|secre[çc]|desmame|RSBI|gasometria|DPOC|fisioterapia respirat/i },
+    { k: 'infec', re: /\bATB\b|antibi|piperacilina|pip-?tazo|meropenem|vancomicina|cefepime|ceftriaxona|ampicilina|polimixina|teicoplanina|cultura|febre|\bTax\b|\bPCR\b|leuc|procalcitonina|infec|pneumonia|sepse|s[ée]ptic|foco/i },
+    { k: 'renal', re: /diurese|\bBH\b|balan[çc]o h[ií]drico|creatinina|\bCr\b|esc[óo]rias|ur[eé]ia|olig[úu]ria|an[úu]ria|dial[ií]t|hemodi[áa]lise|\bTRS\b|CVVH|edema/i },
+    { k: 'meta', re: /glicemi|insulina|Lantus|\bNPH\b|Novorapid|hipoglic|hiperglic|pot[áa]ssio|\bK\b|s[óo]dio|\bNa\b|magn[ée]sio|\bMg\b|c[áa]lcio|f[óo]sforo|acidose|lactato|reposi[çc]/i },
+    { k: 'gi', re: /dieta|\bSNE\b|\bSNG\b|\bNPT\b|abdome|\bRHA\b|evacu|constipa|diarr|n[áa]usea|v[ôo]mito|[ií]leo|fezes|aceita[çc]/i },
+    { k: 'hema', re: /\bHb\b|hemoglobina|transfus|plaquet|sangramento|anticoag|heparina|enoxaparina|\bTEV\b|\bINR\b|\bTAP\b/i },
+    { k: 'cir', re: /ferida|curativo|\bdreno\b|\bFO\b|sutura|\bpele\b|\bLPP\b|les[ãa]o por press|estoma|colostomia|abdome aberto/i },
+    { k: 'mob', re: /fisioterapia motora|mobiliza|reabilita|sedestação|ortostatismo|\bfisioterapia\b/i }
+  ];
+  function classify(s) {
+    var best = null, bestN = 0;
+    SYS.forEach(function (sy) {
+      var m = s.match(new RegExp(sy.re.source, 'gi'));
+      var n = m ? m.length : 0;
+      if (n > bestN) { bestN = n; best = sy.k; }
+    });
+    return best || 'outros';
+  }
+
+  /* ---------- comorbidades ---------- */
+  var COMORB = [
+    { re: /\bHAS\b|hipertens[ãa]o arterial|\bHTA\b/i, label: 'HAS' },
+    { re: /\bDPOC\b/i, label: 'DPOC' },
+    { re: /\b(?:DRC|IRC)\b(?:\s*(?:est[áa]gio|KDIGO|G)?\s*[1-5][ab]?)?/i, label: null },
+    { re: /\bFA\s+(?:cr[ôo]nica|permanente|paroxística|paroxistica|persistente)|hist[óo]ria de FA|FA pr[ée]via|fibrila[çc][ãa]o atrial\s+(?:cr[ôo]nica|permanente|paroxística|paroxistica)/i, label: 'FA' },
+    { re: /\bDAC\b|doen[çc]a arterial coronariana/i, label: 'DAC' },
+    { re: /IAM pr[ée]vio|infarto pr[ée]vio/i, label: 'IAM prévio' },
+    { re: /AVC pr[ée]vio|sequela de AVC|AVC isqu[êe]mico pr[ée]vio/i, label: 'AVC prévio' },
+    { re: /obesidade/i, label: 'obesidade' },
+    { re: /hipotireoidismo/i, label: 'hipotireoidismo' },
+    { re: /\basma\b/i, label: 'asma' },
+    { re: /cirrose/i, label: 'cirrose' },
+    { re: /\bHIV\b/i, label: 'HIV' },
+    { re: /neoplasia|c[âa]ncer/i, label: 'neoplasia' },
+    { re: /tabagis|tabagista/i, label: 'tabagismo' },
+    { re: /etilis|etilista/i, label: 'etilismo' },
+    { re: /epilepsia/i, label: 'epilepsia' },
+    { re: /dem[êe]ncia|alzheimer/i, label: 'demência' },
+    { re: /parkinson/i, label: 'doença de Parkinson' },
+    { re: /\bDLP\b|dislipidemia/i, label: 'dislipidemia' },
+    { re: /\bTEP\b|\bTVP\b/i, label: 'TEV prévio' },
+    { re: /\bLES\b|l[úu]pus/i, label: 'LES' },
+    { re: /transplant/i, label: 'transplantado' }
+  ];
+  function findComorb(text) {
+    var found = [];
+    function add(idx, label) { found.push({ idx: idx, label: label }); }
+    COMORB.forEach(function (c) {
+      var m = c.re.exec(text);
+      if (!m) return;
+      add(m.index, c.label || m[0].replace(/\s+/g, ' ').replace(/^(DRC|IRC)\b(.*)$/i, function (x, a, b) { return a.toUpperCase() + b.toLowerCase(); }));
+    });
+    var dm = /\b(DM\s?[12]?|diabetes(?:\s+mellitus)?(?:\s+tipo\s*[12])?)(\s+insulino(?:dependente|requerente))?/i.exec(text);
+    if (dm) {
+      var base = /^dm/i.test(dm[1]) ? dm[1].replace(/\s+/g, '').toUpperCase() : 'DM';
+      add(dm.index, base + (dm[2] ? ' insulinodependente' : ''));
+    }
+    var icc = /\bICC\b|insufici[êe]ncia card[ií]aca/i.exec(text);
+    if (icc) {
+      var near = text.slice(icc.index, icc.index + 60).match(/FE\s*(?:de\s*)?(\d{1,2})\s*%/i);
+      add(icc.index, 'ICC' + (near ? ' (FE ' + near[1] + '%)' : ''));
+    }
+    var o2 = /O2\s+domiciliar(?:\s+(?:de\s+)?(\d+(?:[.,]\d+)?)\s*(?:L\/min|l\/min|lpm|L|l)\b)?|oxigenoterapia domiciliar/i.exec(text);
+    var o2info = null;
+    if (o2) {
+      o2info = o2[1] ? toNum(o2[1]) : true;
+      add(o2.index, 'O2 domiciliar' + (o2[1] ? ' ' + o2[1].replace('.', ',') + ' L/min' : ''));
+    }
+    found.sort(function (a, b) { return a.idx - b.idx; });
+    return { labels: uniq(found.map(function (f) { return f.label; })), o2dom: o2info };
+  }
+
+  /* ---------- sinais, BH, glicemia, DVA etc. ---------- */
+  function rangeOf(text, name, unitRe) {
+    var re = new RegExp('\\b' + name + '\\s*(?:m[ií]n\\.?\\s*)?[:=]?\\s*(\\d{1,3})\\s*(?:\\/|-|a|at[eé])\\s*(?:m[aá]x\\.?\\s*)?[:=]?\\s*(\\d{1,3})', 'i');
+    var m = re.exec(text);
+    if (m) {
+      var a = Number(m[1]), b = Number(m[2]);
+      return a <= b ? [a, b] : [b, a];
+    }
+    return null;
+  }
+  function vitals(text) {
+    var v = {};
+    var r;
+    if ((r = rangeOf(text, 'PAM'))) { v.pamMin = r[0]; v.pamMax = r[1]; }
+    if ((r = rangeOf(text, 'PAS'))) { v.pasMin = r[0]; v.pasMax = r[1]; }
+    if ((r = rangeOf(text, 'FC'))) { v.fcMin = r[0]; v.fcMax = r[1]; }
+    if ((r = rangeOf(text, 'FR'))) { v.frMin = r[0]; v.frMax = r[1]; }
+    var sp = /Sp?O2\s*[:=]?\s*(\d{2,3})\s*(?:-|a|at[eé])\s*(\d{2,3})\s*%/i.exec(text);
+    if (sp) { v.spoMin = Number(sp[1]); v.spoMax = Number(sp[2]); }
+    else { sp = /Sp?O2\s*[:=]?\s*(\d{2,3})\s*%/i.exec(text); if (sp) { v.spoMin = v.spoMax = Number(sp[1]); } }
+    var tax = /\bTax(?:\.?\s*m[aá]x\.?)?\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i.exec(text);
+    if (tax) v.tax = toNum(tax[1]);
+    var ev = /PAM\s*(?:de\s*)?(\d{2,3})\s*(?:mmHg)?\s*(?:[àa]s|em|por volta das)\s*(\d{1,2})\s*(?:h|:)\s*(\d{2})?/i.exec(text);
+    if (ev) { v.pamEv = Number(ev[1]); v.pamEvTime = ev[2] + 'h' + (ev[3] || ''); }
+    if (v.pamMin == null && v.pamEv != null) { v.pamMin = v.pamEv; v.pamMinFromEvent = true; }
+    return v;
+  }
+
+  function o2Support(text) {
+    var o = {};
+    var cn = /(?:\bCN\b|cateter nasal)\s*(?:a\s*)?[:=]?\s*(\d+(?:[.,]\d+)?)\s*(?:L\/min|l\/min|lpm|L|l)\b/i.exec(text);
+    if (cn) { o.cn = toNum(cn[1]); o.device = 'CN a ' + fmtDec(o.cn) + ' L/min'; }
+    var ven = /m[áa]scara(?:\s+de)?\s+(?:Venturi|reservat[óo]rio|n[ãa]o reinalante)[^.\n;,]{0,20}/i.exec(text);
+    if (!o.device && ven) { o.device = ven[0].trim(); }
+    var caf = /(?:cateter\s+(?:nasal\s+)?de\s+alto\s+fluxo|CNAF|HFNC)[^.\n;,]{0,20}/i.exec(text);
+    if (!o.device && caf) { o.device = caf[0].trim(); o.high = true; }
+    if (/\bVNI\b|BiPAP|CPAP/i.test(text)) o.vni = true;
+    if (/\b(?:em|sob)\s+(?:VM|ventila[çc][ãa]o\s+mec[âa]nica|IOT|TOT)\b/i.test(text)) o.vm = true;
+    if (!o.device && /ar ambiente|\bAA\b/i.test(text)) o.ra = true;
+    return o;
+  }
+
+  function balance(text) {
+    var b = {};
+    var m;
+    if ((m = /Entradas?\s*[:=]?\s*(\d[\d.]*)\s*mL/i.exec(text))) b.in = toNum(m[1]);
+    if ((m = /Sa[íi]das?\s*[:=]?\s*(\d[\d.]*)\s*mL/i.exec(text))) b.out = toNum(m[1]);
+    if ((m = /\bBH\s*[:=]?\s*([+\-−–]?\s*\d[\d.]*)\s*mL/i.exec(text))) b.bh = toNum(m[1]);
+    if (b.bh == null && b.in != null && b.out != null) b.bh = b.in - b.out;
+    if ((m = /acumulad[oa]([^:=\n|;]*?)[:=]\s*([+\-−–]?\s*\d[\d.]*)\s*mL/i.exec(text))) { b.acc = toNum(m[2]); b.accLbl = m[1].trim(); }
+    if ((m = /diurese\s*(?:de\s*)?[:=]?\s*(\d[\d.]*)\s*mL(?:\s*[=(]?\s*(\d+(?:[.,]\d+)?)\s*mL\/kg\/h)?/i.exec(text))) {
+      b.diur = toNum(m[1]); if (m[2]) b.diurKg = toNum(m[2]);
+    }
+    if (b.diur == null && (m = /(\d+(?:[.,]\d+)?)\s*mL\/kg\/h/i.exec(text))) b.diurKg = toNum(m[1]);
+    var q = /diurese\s+(?:espont[âa]nea\s+)?(abundante|preservada|presente|reduzida|diminu[ií]da|escassa)/i.exec(text);
+    if (q) b.qual = q[0].toLowerCase();
+    if (!b.qual && /diurese/i.test(text)) { var d2 = /diurese[^.\n;,]{0,30}/i.exec(text); if (d2 && /abundante|preservada|reduzida|diminu/i.test(d2[0])) b.qual = d2[0].toLowerCase().trim(); }
+    if (/\bBH\s+(?:negativo|neg\.?)/i.test(text)) b.bhSign = -1;
+    if (/\bBH\s+(?:positivo|pos\.?)/i.test(text)) b.bhSign = 1;
+    return b;
+  }
+
+  function glicemias(text) {
+    var m = /Glicemias?(?:\s+capilares?)?\s*[:=]?\s*([^\n]+)/i.exec(text);
+    if (!m) return null;
+    var line = m[1], vals = [], pairs = [], p;
+    var rp = /(\d{1,2})\s*h\s*(\d{2,3})\b/g;
+    while ((p = rp.exec(line))) { pairs.push({ t: p[1] + 'h', v: Number(p[2]) }); vals.push(Number(p[2])); }
+    if (!vals.length) {
+      var rn = /\b(\d{2,3})\b/g;
+      while ((p = rn.exec(line))) { var n = Number(p[1]); if (n >= 20 && n <= 700) vals.push(n); }
+    }
+    if (!vals.length) return null;
+    var g = { min: Math.min.apply(null, vals), max: Math.max.apply(null, vals), n: vals.length };
+    var lows = pairs.filter(function (x) { return x.v < 70; });
+    if (lows.length) g.low = lows[0];
+    else if (g.min < 70) g.low = { v: g.min };
+    return g;
+  }
+
+  function dvaInfo(all, ref) {
+    var d = { use: null, off: null };
+    var drugs = '(noradrenalina|norepinefrina|vasopressina|dobutamina|adrenalina|dopamina)';
+    var m = new RegExp('(?:em uso de|mant[eé]m|mantendo|com|sob)\\s+' + drugs + '[^.\\n;]{0,40}', 'i').exec(all);
+    if (m && !/suspens|desmam|retirad|sem\b/i.test(m[0])) d.use = cleanSpaces(m[0].replace(/^(?:em uso de|mant[eé]m|mantendo|com|sob)\s+/i, ''));
+    if (!d.use) {
+      var m2 = new RegExp('\\b' + drugs + '\\s*(\\d[\\d,.]*)\\s*(mcg\\/kg\\/min|mL\\/h|ml\\/h|mcg\\/min)', 'i').exec(all);
+      if (m2 && !/suspens|desmam|retirad/i.test(all.slice(Math.max(0, m2.index - 20), m2.index + m2[0].length + 25))) d.use = m2[1] + ' ' + m2[2] + ' ' + m2[3];
+    }
+    var b = /(noradrenalina|norepinefrina|vasopressina|DVA|vasopressor\w*|droga[s]? vasoativa[s]?)\s+(?:foi\s+)?suspens[ao]\w*\s+(?:em|no dia|dia)\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i.exec(all);
+    if (b) {
+      var dt = dmToDate(b[2], ref);
+      if (dt) d.off = { n: daysBetween(dt, ref), unit: 'dias', agent: b[1], date: fmtDM(dt) };
+    }
+    if (!d.off) {
+      var a = /(?:sem|suspens[aã]o\s+d[aeo]|desmam\w+\s+d[aeo])\s*(?:uso\s+de\s+)?(vasopressor(?:es)?|DVA|noradrenalina|droga[s]? vasoativa[s]?|vasoativa[s]?)[^.\n;]{0,30}?h[áa]\s*(\d+)\s*(dias?|d\b|horas?|h\b)/i.exec(all);
+      if (a) d.off = { n: Number(a[2]), unit: /^h/i.test(a[3]) ? 'horas' : 'dias', agent: a[1], stated: true };
+    }
+    d.offNoTime = !d.use && !d.off && /(?:sem|suspens\w*)\s+(?:de\s+)?(?:vasopressor|DVA|noradrenalina|droga[s]? vasoativa)/i.test(all);
+    return d;
+  }
+
+  /* ---------- exames em série ---------- */
+  var ANALYTES = [
+    { k: 'Hb', re: 'Hb|Hemoglobina', label: 'Hb', unit: 'g/dL', sys: 'hema' },
+    { k: 'Leuco', re: 'Leuco(?:citos)?|Leuc', label: 'Leucócitos', unit: '', sys: 'infec' },
+    { k: 'Plaq', re: 'Plaq(?:uetas)?', label: 'Plaquetas', unit: '', sys: 'hema' },
+    { k: 'PCR', re: 'PCR', label: 'PCR', unit: 'mg/dL', sys: 'infec' },
+    { k: 'PCT', re: 'Procalcitonina|PCT', label: 'Procalcitonina', unit: 'ng/mL', sys: 'infec' },
+    { k: 'Cr', re: 'Cr|Creatinina', label: 'Cr', unit: 'mg/dL', sys: 'renal' },
+    { k: 'Ur', re: 'Ur|Ur[eé]ia', label: 'Ureia', unit: 'mg/dL', sys: 'renal' },
+    { k: 'Na', re: 'Na|S[óo]dio', label: 'Na', unit: 'mEq/L', sys: 'meta' },
+    { k: 'K', re: 'K|Pot[áa]ssio', label: 'K', unit: 'mEq/L', sys: 'meta' },
+    { k: 'Mg', re: 'Mg|Magn[ée]sio', label: 'Mg', unit: 'mg/dL', sys: 'meta' },
+    { k: 'Lac', re: 'Lactato', label: 'Lactato', unit: 'mmol/L', sys: 'meta' },
+    { k: 'pH', re: 'pH', label: 'pH', unit: '', sys: 'meta' },
+    { k: 'HCO3', re: 'HCO3|Bicarbonato', label: 'HCO3', unit: 'mEq/L', sys: 'meta' },
+    { k: 'TGO', re: 'TGO|AST', label: 'TGO', unit: 'U/L', sys: 'hepa' },
+    { k: 'TGP', re: 'TGP|ALT', label: 'TGP', unit: 'U/L', sys: 'hepa' },
+    { k: 'BT', re: 'BT|Bilirrubina total', label: 'BT', unit: 'mg/dL', sys: 'hepa' },
+    { k: 'INR', re: 'INR', label: 'INR', unit: '', sys: 'hema' },
+    { k: 'Trop', re: 'Troponina|Trop', label: 'Troponina', unit: '', sys: 'hemo' }
+  ];
+  var IMG_RE = /cultura|aspirado|swab|\bRx\b|raio|\bTC\b|tomografia|\bUSG\b|ultra|\beco\b|ecocardio|angio|resson[âa]ncia|\bRM\b|doppler|\bEEG\b|eletrocardiograma/i;
+
+  function parseExams(text, ref) {
+    var series = {}, imaging = [], undated = false;
+    String(text || '').replace(/\r/g, '').split('\n').forEach(function (raw) {
+      var line = raw.replace(/^[\s•\-*]+/, '').trim();
+      if (!line) return;
+      var dm = /^\D{0,14}?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s*[:\-–]?\s*/.exec(line);
+      var isImg = IMG_RE.test(line);
+      if (isImg) {
+        sentencesOf([line]).forEach(function (s) { imaging.push(s); });
+        return;
+      }
+      var date = dm ? dmToDate(dm[1], ref) : null;
+      var body = dm ? line.slice(dm[0].length) : line;
+      var found = false;
+      ANALYTES.forEach(function (a) {
+        var re = new RegExp('(?<![A-Za-zÀ-ÿ])(?:' + a.re + ')\\s*[:=]?\\s*(?:<|>|<=|>=)?\\s*(\\d[\\d.]*(?:,\\d+)?)(?:\\s*(mil|mg\\/dL|mg\\/L|g\\/dL|mEq\\/L|mmol\\/L|%|U\\/L|ng\\/mL|ng\\/dL))?(?![\\d])', 'gi');
+        var m;
+        while ((m = re.exec(body))) {
+          found = true;
+          if (!date) undated = true;
+          (series[a.k] = series[a.k] || { a: a, pts: [] }).pts.push({
+            date: date, raw: m[1], unit: m[2] || '', v: toNum(m[1]), order: Object.keys(series).length + series[a.k].pts.length
+          });
+        }
+      });
+      if (!found && /\d/.test(line) && /[A-Za-z]/.test(line)) { /* linha de exame não reconhecida: ignorada de propósito */ }
+    });
+    Object.keys(series).forEach(function (k) {
+      series[k].pts.sort(function (x, y) {
+        if (x.date && y.date) return x.date - y.date;
+        return x.order - y.order;
+      });
+    });
+    return { series: series, imaging: imaging, undated: undated };
+  }
+  function trendStr(s) {
+    var pts = s.pts, parts = pts.map(function (p) { return p.raw; });
+    var unit = '';
+    for (var i = pts.length - 1; i >= 0; i--) { if (pts[i].unit) { unit = pts[i].unit; break; } }
+    if (!unit && s.a.unit) unit = s.a.unit;
+    var dates = pts.filter(function (p) { return p.date; });
+    var when = '';
+    if (dates.length >= 2) when = fmtDM(dates[0].date) + ' a ' + fmtDM(dates[dates.length - 1].date);
+    else if (dates.length === 1) when = fmtDM(dates[0].date);
+    return { vals: parts.join(' → '), unit: unit, when: when, text: parts.join(' → ') + (unit ? ' ' + unit : '') };
+  }
+  function dirOf(s) {
+    var p = s.pts;
+    if (p.length < 2) return 0;
+    var a = p[0].v, b = p[p.length - 1].v;
+    if (!isFinite(a) || !isFinite(b) || a === 0) return 0;
+    var ch = (b - a) / Math.abs(a);
+    return ch > 0.05 ? 1 : (ch < -0.05 ? -1 : 0);
+  }
+  function lastOf(s) { return s.pts[s.pts.length - 1]; }
+  function arrowFallback(text, key, label, series) {
+    if (series[key]) return;
+    var re = new RegExp('(?<![A-Za-zÀ-ÿ])(?:' + label + ')\\s*(\\d[\\d.]*(?:,\\d+)?)\\s*(?:[>→]|->)\\s*(\\d[\\d.]*(?:,\\d+)?)(?:\\s*(?:[>→]|->)\\s*(\\d[\\d.]*(?:,\\d+)?))?', 'i');
+    var m = re.exec(text);
+    if (!m) return;
+    var a = ANALYTES.filter(function (x) { return x.k === key; })[0];
+    var pts = [m[1], m[2], m[3]].filter(Boolean).map(function (r, i) { return { date: null, raw: r, unit: '', v: toNum(r), order: i }; });
+    series[key] = { a: a, pts: pts };
+  }
+
+  /* ---------- principal ---------- */
+  function generate(inp, opts) {
+    opts = opts || {};
+    var ref = opts.date ? parseISO(opts.date) : new Date();
+    var size = opts.size || 'padrao';
+    var evoRaw = String(inp.evo || ''), bhRaw = String(inp.bh || ''), exaRaw = String(inp.exa || ''), ctxRaw = String(inp.ctx || '');
+    var all = [evoRaw, bhRaw, ctxRaw].join('\n');
+    var gaps = [], removedGeneric = [], recog = [];
+    function gap(t) { gaps.push(t); }
+
+    /* demografia */
+    var ageM = /(?:Idade\s*[:=]?\s*(\d{1,3}))|(?:(\d{1,3})\s*anos)/i.exec(evoRaw + '\n' + ctxRaw);
+    var age = ageM ? Number(ageM[1] || ageM[2]) : null;
+    if (age != null && (age < 0 || age > 120)) age = null;
+    var fem = (all.match(/\b(?:admitida|internada|extubada|submetida|idosa|colaborativa|feminina|mulher)\b/gi) || []).length;
+    var mas = (all.match(/\b(?:admitido|internado|extubado|submetido|idoso|colaborativo|masculino|homem)\b/gi) || []).length;
+    var sex = fem > mas ? 'f' : (mas > fem ? 'm' : null);
+
+    var cm = findComorb(evoRaw + '\n' + ctxRaw);
+    var comorb = cm.labels;
+    var frail = /fr[áa]gil/i.test(evoRaw + ctxRaw);
+
+    /* internação */
+    var admM = /(?:admitid[oa]|internad[oa]|admiss[ãa]o|interna[çc][ãa]o)[^.\n]{0,50}?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i.exec(ctxRaw + '\n' + evoRaw);
+    var adm = admM ? dmToDate(admM[1], ref) : null;
+    var dday = adm ? daysBetween(adm, ref) + 1 : null;
+    if (dday != null && (dday < 1 || dday > 400)) dday = null;
+
+    /* sentenças do evolução e do ctx */
+    var evoLines = cleanLines(evoRaw);
+    var evoS = sentencesOf(evoLines);
+    var ctxS = sentencesOf(cleanLines(ctxRaw));
+    var bhFree = cleanLines(bhRaw).filter(function (l) {
+      return !/\|/.test(l) && !/^(SSVV|Entradas|Sa[íi]das|Glicemias?|BH\b|Balan[çc]o)/i.test(l) && l.split(/\s+/).length >= 6;
+    });
+    var bhS = sentencesOf(bhFree);
+
+    /* HMA */
+    var ADM_KW = /admitid|internad|admiss[ãa]o|interna[çc][ãa]o|submetid|\bIOT\b|extubad|intubad|cirurgia|p[óo]s-operat|\bPO\b|politrauma|trauma\b|choque|sepse/i;
+    function isHist(s) {
+      if (ADM_KW.test(s) && !/\b(?:hoje|ontem|plant[ãa]o)\b/i.test(s)) return true;
+      var d = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/.exec(s);
+      if (d) { var dd = dmToDate(d[1], ref); if (dd && daysBetween(dd, ref) >= 2) return true; }
+      return false;
+    }
+    var hmaS = [], pool = [];
+    ctxS.concat(evoS).forEach(function (s) {
+      var cmN = 0;
+      COMORB.forEach(function (c) { if (c.re.test(s)) cmN++; });
+      var demo = /^(?:feminina|masculin[oa]|\d{1,3}\s*anos)/i.test(s) || cmN >= 2;
+      if (demo) return;
+      if (isHist(s)) { if (hmaS.indexOf(s) < 0 && hmaS.length < 4) hmaS.push(s); }
+      else if (ctxS.indexOf(s) < 0) pool.push(s);
+    });
+    bhS.forEach(function (s) { pool.push(s); });
+
+    (function () {
+      var dateOf = function (x) { var m = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/.exec(x); return m ? m[1] : null; };
+      hmaS = hmaS.filter(function (x, i) {
+        if (ctxS.indexOf(x) < 0) return true;
+        var d = dateOf(x);
+        return !(d && hmaS.some(function (y, j) { return j !== i && ctxS.indexOf(y) < 0 && y.indexOf(d.slice(0, 5)) >= 0; }));
+      });
+    })();
+    var dxM = /(?:admitid[oa]|internad[oa]|admiss[ãa]o|submetid[oa])[^.]*?\b(?:com|por|devido a|para)\s+([^,.;]+)/i.exec(hmaS.join('. '));
+    var dx = dxM ? cleanSpaces(dxM[1]) : null;
+    var poText = null, poDay = null;
+    var poM = /\b(?:PO|p[óo]s-operat[óo]rio)\b\s*(?:de|d[aeo])?\s*([^,.;(]+(?:\([^)]*\))?(?:,\s*complicad[oa]\s+(?:com|por)\s+[^,.;]+)?)/i.exec(hmaS.join('. '));
+    if (poM) {
+      poText = cleanSpaces(poM[1]);
+      var poD = /\((\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\)/.exec(poText);
+      if (poD) { var pd = dmToDate(poD[1], ref); if (pd) { poDay = daysBetween(pd, ref); if (poDay < 0 || poDay > 120) poDay = null; } }
+      if (!dx) dx = 'pós-operatório de ' + poText;
+    }
+
+    /* classificar e limpar */
+    var bySys = {};
+    pool.forEach(function (s) {
+      var t = degeneric(s, removedGeneric);
+      if (!t) return;
+      t = t.replace(/(\d)\s*>\s*(\d)/g, '$1 → $2');
+      var k = classify(t);
+      (bySys[k] = bySys[k] || []).push(t);
+    });
+    function S(k) { return (bySys[k] || []).slice(); }
+    function sentText(k) { return S(k).join(' '); }
+    function hasNum(origText, nums) {
+      return nums.length && nums.every(function (n) { return new RegExp('(?:^|[^\\d])' + String(n).replace('.', ',') + '(?:[^\\d]|$)').test(origText.replace(/\./g, '')); });
+    }
+
+    /* extrações numéricas */
+    var vit = vitals(bhRaw + '\n' + evoRaw);
+    var vitBH = vitals(bhRaw);
+    if (vitBH.pamMin != null) { vit.pamMin = vitBH.pamMin; vit.pamMax = vitBH.pamMax; }
+    var o2 = o2Support(bhRaw + '\n' + evoRaw);
+    var bal = balance(bhRaw + '\n' + evoRaw);
+    var gli = glicemias(bhRaw + '\n' + evoRaw);
+    var dva = dvaInfo(all, ref);
+    var gcsM = /(?:Glasgow|\bECG\b|ECGl|Escala de Coma de Glasgow)\s*[:=]?\s*(\d{1,2})\b(?!\s*[h%])/i.exec(all);
+    var gcs = gcsM && Number(gcsM[1]) >= 3 && Number(gcsM[1]) <= 15 ? Number(gcsM[1]) : null;
+    var rassM = /RASS\s*[:=]?\s*([+\-−–]?\s*\d)/i.exec(all);
+    var rass = rassM ? rassM[1].replace(/\s/g, '').replace(/[−–]/g, '-') : null;
+    var sedated = /sedad[oa]|seda[çc][ãa]o|midazolam|propofol|fentanil|dexmedetomidina|precedex/i.test(all);
+
+    var ex = parseExams(exaRaw, ref);
+    var SE = ex.series;
+    arrowFallback(evoRaw, 'Cr', 'Cr|Creatinina', SE);
+    arrowFallback(evoRaw, 'PCR', 'PCR', SE);
+    arrowFallback(evoRaw, 'Leuco', 'Leuco(?:citos)?', SE);
+    arrowFallback(evoRaw, 'K', 'K|Pot[áa]ssio', SE);
+
+    var atbM = /(piperacilina[-\s]?tazobactam|pip-?tazo|meropenem|vancomicina|cefepime|ceftriaxona|ampicilina(?:-sulbactam)?|polimixina(?: B)?|teicoplanina|linezolida|azitromicina|claritromicina|oxacilina|clindamicina|metronidazol|ciprofloxacino|levofloxacino|amicacina|gentamicina|ceftazidima|ertapenem|tigeciclina)(?:[^.\n;,]{0,12}?\bD(\d{1,2})\b)?/gi;
+    var atbs = [], am;
+    while ((am = atbM.exec(all))) atbs.push(lc1(am[1]) + (am[2] ? ' (D' + am[2] + ')' : ''));
+    atbs = uniq(atbs);
+
+    /* ---------- seção: COMORBIDADES ---------- */
+    var secCom = comorb.length ? comorb.join('; ') + '.' : '';
+    if (!comorb.length) gap('Comorbidades e problemas prévios não identificados nos textos colados.');
+
+    /* ---------- seção: HMA ---------- */
+    var secHma = hmaS.map(function (s) { return endDot(cap1(s)); }).join(' ');
+    if (!hmaS.length) gap('História da moléstia atual: não encontrei motivo da internação nem procedimentos com data. Use o campo de observações.');
+
+    /* ---------- seção: SUMÁRIO ---------- */
+    var P1 = [], P2 = [], P3 = [], P4 = [];
+
+    /* P1: abertura */
+    var who = 'Paciente';
+    if (age != null && age >= 60) who += (sex === 'f' ? ' idosa' : sex === 'm' ? ' idoso' : ' idosa(o)').replace('idosa(o)', 'idoso(a)');
+    else if (sex === 'f') who += ' feminina';
+    else if (sex === 'm') who += ' masculino';
+    if (frail) who += ' frágil';
+    if (age != null) who += ' de ' + age + ' anos';
+    var s1 = who;
+    if (comorb.length) {
+      var cShow = comorb.filter(function (c) { return !/^O2 domiciliar/.test(c); }).slice(0, 6);
+      var o2dl = comorb.filter(function (c) { return /^O2 domiciliar/.test(c); })[0];
+      if (o2dl) cShow.push(o2dl);
+      s1 += ', com ' + listJoin(cShow);
+    }
+    if (dday != null) s1 += ', no ' + dday + 'º dia de internação';
+    if (poText && dx === 'pós-operatório de ' + poText) {
+      s1 += (dday != null ? ', ' : ', ') + (poDay != null ? 'no ' + poDay + 'º dia de pós-operatório de ' : 'em pós-operatório de ') + lc1(poText);
+    } else if (dx) s1 += (dday != null ? ' por ' : ', internado(a) por ').replace('internado(a)', sex === 'f' ? 'internada' : sex === 'm' ? 'internado' : 'internado(a)') + lc1(dx);
+    if (s1 !== 'Paciente') P1.push(endDot(s1));
+
+    var pcr = SE.PCR, leu = SE.Leuco;
+    var infParts = [], anyUp = false;
+    if (pcr && pcr.pts.length >= 2) {
+      var t = trendStr(pcr), d = dirOf(pcr);
+      if (d > 0) { anyUp = true; infParts.push('ascensão de PCR (' + t.text + (t.when ? ', de ' + t.when : '') + ')'); }
+      else if (d < 0) infParts.push('queda de PCR (' + t.text + (t.when ? ', de ' + t.when : '') + ')');
+      else infParts.push('PCR mantida (' + t.text + (t.when ? ', de ' + t.when : '') + ')');
+    }
+    if (leu && leu.pts.length >= 2) {
+      var tl = trendStr(leu), dl = dirOf(leu);
+      if (dl > 0) { anyUp = true; infParts.push('leucocitose em ascensão (' + tl.text + (tl.when ? ', de ' + tl.when : '') + ')'); }
+      else if (dl < 0) infParts.push('queda dos leucócitos (' + tl.text + (tl.when ? ', de ' + tl.when : '') + ')');
+      else infParts.push('leucócitos mantidos (' + tl.text + (tl.when ? ', de ' + tl.when : '') + ')');
+    }
+    if (infParts.length) {
+      var lead = anyUp ? 'Mantém vigilância infecciosa ativa diante de ' : 'Em acompanhamento infeccioso, com ';
+      P1.push(endDot(lead + listJoin(infParts)));
+    }
+    if (vit.tax != null) {
+      var taxTxt = 'Temperatura axilar máxima de ' + fmtDec(vit.tax) + ' °C nas últimas 24 h';
+      if (!hasNum(sentText('infec'), [fmtDec(vit.tax)])) P1.push(endDot(taxTxt));
+    }
+    if (size !== 'curta') S('infec').forEach(function (s) { P1.push(endDot(s)); });
+    else if (atbs.length && !infParts.length) P1.push(endDot('Em uso de ' + listJoin(atbs)));
+    if (size === 'curta' && atbs.length && infParts.length) P1.push(endDot('Em uso de ' + listJoin(atbs)));
+
+    /* P2: hemodinâmica, respiratório, neuro */
+    var hemoSents = S('hemo');
+    var dvaFromDate = !!(dva.off && dva.off.date);
+    if (dvaFromDate) {
+      hemoSents = hemoSents.map(function (x) {
+        return x.replace(/(?:,?\s*(?:j[áa]\s+)?)?(?:sem|suspens\w*)\s+(?:de\s+)?(?:vasopressor\w*|DVA|noradrenalina|droga\w*\s+vasoativa\w*)[^.,;]*?h[áa]\s*\d+\s*(?:dias?|d\b|horas?|h\b)/i, '').replace(/^[\s,;]+/, '');
+      }).filter(function (x) { return x.replace(/[^A-Za-zÀ-ÿ]/g, '').length > 5; }).map(cap1);
+    }
+    var hemoOrig = hemoSents.join(' ');
+    var hemoParts = [];
+    if (dva.use) hemoParts.push('Em uso de ' + dva.use);
+    else if (dva.off && (dvaFromDate || !/vasopressor|DVA|noradrenalina|vasoativa/i.test(hemoOrig))) {
+      var tm = dva.off.n + ' ' + (dva.off.n === 1 ? dva.off.unit.replace(/s$/, '') : dva.off.unit);
+      hemoParts.push('Sem droga vasoativa há ' + tm + (dva.off.date ? ' (suspensa em ' + dva.off.date + ')' : ''));
+    }
+    if (vit.pamMin != null) {
+      var ptxt = vit.pamMinFromEvent ? 'PAM de ' + vit.pamMin + ' mmHg às ' + vit.pamEvTime : 'PAM mínima de ' + vit.pamMin + (vit.pamMax != null ? ' e máxima de ' + vit.pamMax : '') + ' mmHg';
+      var pas = vit.pasMin != null ? ' (PAS ' + vit.pasMin + ' a ' + vit.pasMax + ' mmHg)' : '';
+      var low = (vit.pamMin < 65 && !dva.use) ? ', com PAM mínima abaixo de 65 mmHg sem droga vasoativa' : '';
+      hemoParts.push('Nas últimas 24 h, ' + ptxt + pas + low);
+    } else if (vit.pasMin != null) {
+      hemoParts.push('Nas últimas 24 h, PAS de ' + vit.pasMin + ' a ' + vit.pasMax + ' mmHg');
+    }
+    if (vit.fcMin != null && !hasNum(hemoOrig, [vit.fcMin])) hemoParts.push('FC de ' + vit.fcMin + ' a ' + vit.fcMax + ' bpm');
+    hemoParts.forEach(function (p) { P2.push(endDot(p)); });
+    if (size !== 'curta') hemoSents.forEach(function (s) { P2.push(endDot(s)); });
+
+    var respOrig = sentText('resp');
+    var respSents = S('resp');
+    var respParts = [], cmpTxt = '';
+    var base = cm.o2dom;
+    var o2k = null;
+    if (o2.vm && !/\bVM\b|ventila[çc][ãa]o mec/i.test(respOrig)) respParts.push('Em ventilação mecânica');
+    if (o2.vni && !/\bVNI\b|BiPAP|CPAP/i.test(respOrig)) respParts.push('Em uso de VNI');
+    if (o2.device) {
+      var cmp = '';
+      if (o2.cn != null && base === true) cmp = ' (O2 domiciliar prévio sem valor informado para comparar)';
+      else if (o2.cn != null && typeof base === 'number') {
+        if (o2.cn > base) cmp = ', acima do basal domiciliar de ' + fmtDec(base) + ' L/min';
+        else if (o2.cn === base) cmp = ', igual ao basal domiciliar de ' + fmtDec(base) + ' L/min';
+        else cmp = ', abaixo do basal domiciliar de ' + fmtDec(base) + ' L/min';
+      }
+      var oxy = 'Em ' + o2.device + cmp;
+      if (vit.spoMin != null) oxy += ', com SpO2 de ' + vit.spoMin + (vit.spoMax !== vit.spoMin ? ' a ' + vit.spoMax : '') + '%';
+      if (vit.frMin != null) oxy += (vit.spoMin != null ? ' e' : ', com') + ' FR de ' + vit.frMin + (vit.frMax !== vit.frMin ? ' a ' + vit.frMax : '') + ' irpm';
+      respParts.push(oxy);
+      respSents = respSents.map(function (s) { return s.replace(/,?\s*sob\s+(?:CN|O2|cateter nasal)[^,.;]*/i, '').replace(/^[\s,]+/, ''); }).filter(function (s) { return s.replace(/[^A-Za-zÀ-ÿ]/g, '').length > 5; }).map(cap1);
+    } else if (vit.spoMin != null || vit.frMin != null) {
+      var o3 = [];
+      if (vit.spoMin != null) o3.push('SpO2 de ' + vit.spoMin + (vit.spoMax !== vit.spoMin ? ' a ' + vit.spoMax : '') + '%' + (o2.ra ? ' em ar ambiente' : ''));
+      if (vit.frMin != null) o3.push('FR de ' + vit.frMin + (vit.frMax !== vit.frMin ? ' a ' + vit.frMax : '') + ' irpm');
+      respParts.push('Nas últimas 24 h, ' + listJoin(o3));
+    }
+    respParts.forEach(function (p) { P2.push(endDot(p)); });
+    if (size !== 'curta') respSents.forEach(function (s) { P2.push(endDot(s)); });
+
+    var neuroOrig = sentText('neuro');
+    if (size !== 'curta') S('neuro').forEach(function (s) { P2.push(endDot(s)); });
+    var neuroParts = [];
+    if (gcs != null && !hasNum(neuroOrig, [gcs])) neuroParts.push('Glasgow ' + gcs);
+    if (rass != null && !/RASS/i.test(neuroOrig)) neuroParts.push('RASS ' + rass);
+    if (neuroParts.length) P2.push(endDot(neuroParts.join(', ')));
+
+    /* P3: renal, metabólico, GI, hemato, cirúrgico, mobilização */
+    var cr = SE.Cr;
+    var crUp = cr && cr.pts.length >= 2 && lastOf(cr).v > cr.pts[cr.pts.length - 2].v;
+    var haveBal = bal.diur != null || bal.bh != null || bal.diurKg != null;
+    var renalSents = S('renal');
+    var renalOrigNeeded = renalSents.filter(function (s) { return /hemodi[áa]lise|\bTRS\b|an[úu]ria|olig[úu]ria|CVVH|edema|dial[ií]t/i.test(s); });
+    var renalMade = false;
+    if (haveBal || cr) {
+      var diurTxt = null, bhTxt = null, crTxt = null;
+      if (bal.diur != null) diurTxt = bal.qual ? bal.qual + ' (' + fmtInt(bal.diur) + ' mL' + (bal.diurKg != null ? '; ' + fmtDec(bal.diurKg) + ' mL/kg/h' : '') + ')' : 'diurese de ' + fmtInt(bal.diur) + ' mL' + (bal.diurKg != null ? ' (' + fmtDec(bal.diurKg) + ' mL/kg/h)' : '');
+      else if (bal.diurKg != null) diurTxt = (bal.qual || 'diurese') + ' (' + fmtDec(bal.diurKg) + ' mL/kg/h)';
+      else if (bal.qual) diurTxt = bal.qual;
+      if (bal.bh != null) bhTxt = 'balanço hídrico ' + (bal.bh < 0 ? 'negativo' : bal.bh > 0 ? 'positivo' : 'zerado') + ' de ' + fmtInt(Math.abs(bal.bh)) + ' mL em 24 h' + (bal.acc != null ? ' (acumulado de ' + (bal.acc < 0 ? '−' : '+') + fmtInt(Math.abs(bal.acc)) + ' mL' + (bal.accLbl ? ' em ' + bal.accLbl : '') + ')' : '');
+      else if (bal.bhSign) bhTxt = 'balanço hídrico ' + (bal.bhSign < 0 ? 'negativo' : 'positivo');
+      if (cr) {
+        var tc = trendStr(cr);
+        var lastTwo = cr.pts.length >= 2 ? cr.pts[cr.pts.length - 2].raw + ' para ' + lastOf(cr).raw : lastOf(cr).raw;
+        crTxt = { trend: tc.text, when: tc.when, lastTwo: lastTwo, up: crUp, n: cr.pts.length };
+      }
+      var sent;
+      if (crTxt && crTxt.n >= 2 && crTxt.up && (bal.bh < 0 || bal.bhSign < 0 || bal.qual)) {
+        var lead2 = [diurTxt, bhTxt].filter(Boolean);
+        sent = 'Apesar de ' + listJoin(lead2.length ? lead2 : ['balanço negativo']) + ', a creatinina subiu (' + crTxt.trend + (crTxt.when ? ', de ' + crTxt.when : '') + '), a monitorar a função renal mesmo com resposta diurética presente';
+      } else {
+        var chunks = [];
+        if (diurTxt) chunks.push(cap1(diurTxt));
+        if (bhTxt) chunks.push(chunks.length ? bhTxt : cap1(bhTxt));
+        if (crTxt) chunks.push((chunks.length ? 'creatinina ' : 'Creatinina ') + crTxt.trend + (crTxt.when ? ' (' + crTxt.when + ')' : ''));
+        sent = chunks.join('; ');
+      }
+      if (sent) { P3.push(endDot(sent)); renalMade = true; }
+    }
+    if (size !== 'curta') {
+      (renalMade ? renalOrigNeeded : renalSents).forEach(function (s) { P3.push(endDot(s)); });
+    }
+
+    var metaOrig = sentText('meta');
+    if (size !== 'curta') S('meta').forEach(function (s) { P3.push(endDot(s)); });
+    if (gli && !hasNum(metaOrig, [gli.min])) {
+      var gt = 'Glicemias capilares de ' + gli.min + ' a ' + gli.max + ' mg/dL nas últimas 24 h';
+      if (gli.low) gt += ', com hipoglicemia de ' + gli.low.v + ' mg/dL' + (gli.low.t ? ' às ' + gli.low.t : '');
+      P3.push(endDot(gt));
+    }
+    var kS = SE.K;
+    if (kS && !hasNum(metaOrig, [lastOf(kS).raw])) {
+      var kv = lastOf(kS).v;
+      if (kv < 3.5 || kv > 5.5) { var tk = trendStr(kS); P3.push(endDot((kv < 3.5 ? 'Hipocalemia' : 'Hipercalemia') + ' (K ' + tk.text + (tk.when ? ', de ' + tk.when : '') + ')')); }
+    }
+    var naS = SE.Na;
+    if (naS) { var nv = lastOf(naS).v; if ((nv < 130 || nv > 150) && !hasNum(metaOrig, [lastOf(naS).raw])) P3.push(endDot((nv < 130 ? 'Hiponatremia' : 'Hipernatremia') + ' (Na ' + trendStr(naS).text + ')')); }
+    var lacS = SE.Lac;
+    if (lacS && lastOf(lacS).v > 2 && !hasNum(metaOrig, [lastOf(lacS).raw])) P3.push(endDot('Lactato ' + trendStr(lacS).text));
+    var plS0 = SE.Plaq;
+    if (plS0 && lastOf(plS0).unit === 'mil' && lastOf(plS0).v < 100) { var tpl = trendStr(plS0); P3.push(endDot('Plaquetopenia (plaquetas ' + tpl.vals + ' mil' + (tpl.when && plS0.pts.length > 1 ? ', de ' + tpl.when : '') + ')')); }
+
+    if (size !== 'curta') ['gi', 'hema', 'cir', 'mob', 'outros'].forEach(function (k) { S(k).forEach(function (s) { P3.push(endDot(s)); }); });
+    var hbS = SE.Hb;
+    if (hbS && size !== 'curta') {
+      var th = trendStr(hbS);
+      var hbDrop = hbS.pts.length >= 2 ? hbS.pts[0].v - lastOf(hbS).v : 0;
+      if ((lastOf(hbS).v < 8 || hbDrop >= 1.5) && !hasNum(sentText('hema'), [lastOf(hbS).raw])) P3.push(endDot('Hemoglobina ' + th.text + (th.when && hbS.pts.length > 1 ? ' (' + th.when + ')' : '')));
+    }
+    if (size === 'detalhada') {
+      var used = { PCR: 1, Leuco: 1, Cr: 1, K: 1, Na: 1, Lac: 1, Hb: 1 };
+      var rest = [];
+      Object.keys(SE).forEach(function (k) { if (!used[k]) rest.push(SE[k].a.label + ' ' + lastOf(SE[k]).raw + (lastOf(SE[k]).unit ? ' ' + lastOf(SE[k]).unit : '')); });
+      if (rest.length) P3.push(endDot('Demais exames (último resultado): ' + rest.join('; ')));
+    }
+
+    /* P4: motivo de permanência */
+    var crit = [];
+    if (dva.use) crit.push({ t: 'uso de droga vasoativa (' + dva.use + ')', pr: 1 });
+    if (dva.off && dva.off.unit === 'horas' ? dva.off.n < 72 : (dva.off && dva.off.n <= 3)) crit.push({ t: 'desmame recente de droga vasoativa (suspensa há ' + dva.off.n + ' ' + dva.off.unit + ')', pr: 2 });
+    if (vit.pamMin != null && vit.pamMin < 65 && !dva.use) crit.push({ t: 'hemodinâmica limítrofe (PAM mínima de ' + vit.pamMin + ' mmHg' + (dva.off ? ' sem droga vasoativa' : '') + ')', pr: 3 });
+    if (o2.vm) crit.push({ t: 'ventilação mecânica', pr: 1 });
+    if (o2.vni) crit.push({ t: 'suporte com VNI', pr: 2 });
+    if (o2.high) crit.push({ t: 'oxigenoterapia de alto fluxo', pr: 2 });
+    if (o2.cn != null) {
+      if (typeof base === 'number' && o2.cn > base) crit.push({ t: 'demanda de O2 acima da basal (CN ' + fmtDec(o2.cn) + ' L/min, basal ' + fmtDec(base) + ' L/min)', pr: 4 });
+      else if (!base && /sem\s+O2\s+domiciliar|n[ãa]o\s+usa\s+O2|sem\s+uso\s+pr[ée]vio\s+de\s+O2/i.test(all)) crit.push({ t: 'introdução de suporte de O2 (CN ' + fmtDec(o2.cn) + ' L/min, sem uso prévio)', pr: 4 });
+    }
+    if (gcs != null && gcs <= 13) crit.push({ t: 'rebaixamento do nível de consciência (Glasgow ' + gcs + ')', pr: 2 });
+    if (sedated && rass != null && rass !== '0') crit.push({ t: 'sedação em curso (RASS ' + rass + ')', pr: 3 });
+    if (vit.frMax != null && vit.frMax >= 25) crit.push({ t: 'taquipneia (FR até ' + vit.frMax + ' irpm)', pr: 5 });
+    if (vit.tax != null && vit.tax >= 37.8) crit.push({ t: 'febre (Tax máx ' + fmtDec(vit.tax) + ' °C)', pr: 6 });
+    if (lacS && lastOf(lacS).v > 2) crit.push({ t: 'hiperlactatemia (lactato ' + lastOf(lacS).raw + ')', pr: 3 });
+    if (anyUp) {
+      var up = [];
+      if (pcr && dirOf(pcr) > 0) up.push('PCR ' + trendStr(pcr).text);
+      if (leu && dirOf(leu) > 0) up.push('leucócitos ' + trendStr(leu).text);
+      crit.push({ t: 'marcadores inflamatórios em ascensão (' + up.join(' e ') + ')' + (atbs.length ? ' em vigência de ' + listJoin(atbs) : ''), pr: 5 });
+    }
+    if (crUp) {
+      var crBig = lastOf(cr).v - cr.pts[0].v >= 0.3;
+      crit.push({ t: (crBig ? 'piora da função renal' : 'piora discreta da função renal') + ' (Cr ' + trendStr(cr).text + ')' + ((bal.bh < 0 || bal.bhSign < 0) ? ' apesar de balanço hídrico negativo' : ''), pr: crBig ? 3 : 7 });
+    }
+    if (gli && gli.low) crit.push({ t: 'hipoglicemia (' + gli.low.v + ' mg/dL' + (gli.low.t ? ' às ' + gli.low.t : '') + ')', pr: 6 });
+    if (kS && lastOf(kS).v < 3.5) crit.push({ t: 'hipocalemia (K ' + lastOf(kS).raw + ')', pr: 8 });
+    if (kS && lastOf(kS).v > 5.5) crit.push({ t: 'hipercalemia (K ' + lastOf(kS).raw + ')', pr: 4 });
+    if (naS && (lastOf(naS).v < 130 || lastOf(naS).v > 150)) crit.push({ t: 'distúrbio do sódio (Na ' + lastOf(naS).raw + ')', pr: 6 });
+    if (hbS && lastOf(hbS).v < 7) crit.push({ t: 'anemia (Hb ' + lastOf(hbS).raw + ')', pr: 5 });
+    var plS = SE.Plaq;
+    if (plS && lastOf(plS).unit === 'mil' && lastOf(plS).v < 50) crit.push({ t: 'plaquetopenia (' + lastOf(plS).raw + ' mil)', pr: 5 });
+    crit.sort(function (a, b) { return a.pr - b.pr; });
+    var maxC = size === 'curta' ? 3 : (size === 'detalhada' ? 99 : 6);
+    var critShow = crit.slice(0, maxC).map(function (c) { return c.t; });
+    if (critShow.length) {
+      P4.push(endDot('Permanece em UTI por ' + listJoin(critShow)));
+    } else {
+      P4.push('Os dados colados não incluem critério objetivo de suporte intensivo para justificar a permanência em UTI.');
+      gap('ATENÇÃO: nenhum critério objetivo de permanência em UTI foi identificado nos dados colados (DVA, suporte ventilatório, PAM, Glasgow/RASS, lactato, tendência dos exames). Confira se faltam dados antes de assinar.');
+    }
+
+    var paras = [P1, P2, P3, P4].map(function (p) { return p.join(' '); }).filter(Boolean);
+    var secSum = paras.join('\n\n');
+
+    /* ---------- seção: LISTA DE PROBLEMAS E EXAMES ---------- */
+    var prob = [];
+    if (dx) prob.push(cap1(dx) + (dday != null ? ' (' + dday + 'º dia de internação)' : ''));
+    var infL = [];
+    if (atbs.length) infL.push('em uso de ' + listJoin(atbs));
+    ['PCR', 'Leuco', 'PCT'].forEach(function (k) { if (SE[k]) { var t = trendStr(SE[k]); infL.push(SE[k].a.label + ' ' + t.text + (t.when && SE[k].pts.length > 1 ? ' (' + t.when + ')' : '')); } });
+    if (vit.tax != null) infL.push('Tax máx ' + fmtDec(vit.tax) + ' °C');
+    ex.imaging.filter(function (s) { return /cultura|aspirado|swab/i.test(s); }).forEach(function (s) { infL.push(s); });
+    if (infL.length) prob.push('Infeccioso: ' + infL.join('; '));
+    var heL = [];
+    if (dva.use) heL.push('em uso de ' + dva.use);
+    else if (dva.off) heL.push('sem droga vasoativa há ' + dva.off.n + ' ' + dva.off.unit);
+    if (vit.pamMin != null) heL.push('PAM ' + (vit.pamMax != null ? vit.pamMin + ' a ' + vit.pamMax : vit.pamMin) + ' mmHg');
+    if (SE.Trop) heL.push('troponina ' + trendStr(SE.Trop).text);
+    ex.imaging.filter(function (s) { return /\beco\b|ecocardio/i.test(s); }).forEach(function (s) { heL.push(s); });
+    if (heL.length) prob.push('Hemodinâmico: ' + heL.join('; '));
+    var reL = [];
+    if (o2.device) reL.push(o2.device + (typeof base === 'number' ? ' (basal ' + fmtDec(base) + ' L/min)' : ''));
+    if (o2.vni) reL.push('VNI');
+    if (vit.spoMin != null) reL.push('SpO2 ' + vit.spoMin + (vit.spoMax !== vit.spoMin ? ' a ' + vit.spoMax : '') + '%');
+    ex.imaging.filter(function (s) { return /t[óo]rax|pulm|\bRx\b/i.test(s) && !/cultura|aspirado|swab/i.test(s); }).forEach(function (s) { reL.push(s); });
+    if (reL.length) prob.push('Respiratório: ' + reL.join('; '));
+    var neL = [];
+    if (gcs != null) neL.push('Glasgow ' + gcs);
+    if (rass != null) neL.push('RASS ' + rass);
+    ex.imaging.filter(function (s) { return /cr[âa]nio|enc[ée]falo|\bEEG\b/i.test(s); }).forEach(function (s) { neL.push(s); });
+    if (neL.length) prob.push('Neurológico: ' + neL.join('; '));
+    var rnL = [];
+    ['Cr', 'Ur'].forEach(function (k) { if (SE[k]) { var t = trendStr(SE[k]); rnL.push(SE[k].a.label + ' ' + t.text + (t.when && SE[k].pts.length > 1 ? ' (' + t.when + ')' : '')); } });
+    if (bal.diur != null) rnL.push('diurese ' + fmtInt(bal.diur) + ' mL' + (bal.diurKg != null ? ' (' + fmtDec(bal.diurKg) + ' mL/kg/h)' : ''));
+    if (bal.bh != null) rnL.push('BH ' + (bal.bh < 0 ? '−' : '+') + fmtInt(Math.abs(bal.bh)) + ' mL' + (bal.acc != null ? ' (acumulado ' + (bal.acc < 0 ? '−' : '+') + fmtInt(Math.abs(bal.acc)) + ' mL' + (bal.accLbl ? ' em ' + bal.accLbl : '') + ')' : ''));
+    if (rnL.length) prob.push('Renal: ' + rnL.join('; '));
+    var meL = [];
+    ['K', 'Na', 'Mg', 'Lac', 'pH', 'HCO3'].forEach(function (k) { if (SE[k]) { var t = trendStr(SE[k]); meL.push(SE[k].a.label + ' ' + t.text + (t.when && SE[k].pts.length > 1 ? ' (' + t.when + ')' : '')); } });
+    if (gli) meL.push('glicemias ' + gli.min + ' a ' + gli.max + ' mg/dL' + (gli.low ? ', hipoglicemia ' + gli.low.v + (gli.low.t ? ' às ' + gli.low.t : '') : ''));
+    if (meL.length) prob.push('Metabólico e eletrolítico: ' + meL.join('; '));
+    var hmL = [];
+    ['Hb', 'Plaq', 'INR'].forEach(function (k) { if (SE[k]) { var t = trendStr(SE[k]); hmL.push(SE[k].a.label + ' ' + t.text + (t.when && SE[k].pts.length > 1 ? ' (' + t.when + ')' : '')); } });
+    if (hmL.length) prob.push('Hematológico: ' + hmL.join('; '));
+    var hpL = [];
+    ['TGO', 'TGP', 'BT'].forEach(function (k) { if (SE[k]) { var t = trendStr(SE[k]); hpL.push(SE[k].a.label + ' ' + t.text); } });
+    ex.imaging.filter(function (s) { return /abdom|\bUSG\b/i.test(s) && !/cultura|aspirado|swab|t[óo]rax/i.test(s); }).forEach(function (s) { hpL.push(s); });
+    if (hpL.length) prob.push('Abdominal e hepático: ' + hpL.join('; '));
+    var other = ex.imaging.filter(function (s) { return !/cultura|aspirado|swab|t[óo]rax|pulm|\bRx\b|\beco\b|ecocardio|cr[âa]nio|enc[ée]falo|\bEEG\b|abdom|\bUSG\b/i.test(s); });
+    if (other.length) prob.push('Outros exames: ' + other.join('; '));
+    var secProb = prob.map(function (p, i) { return (i + 1) + ') ' + endDot(p); }).join('\n');
+    if (!prob.length) gap('Lista de problemas vazia: não encontrei exames nem dados estruturados. Cole os exames com data.');
+
+    /* ---------- lacunas (mini-protocolo de índices objetivos) ---------- */
+    if (vit.pamMin == null) gap('Hemodinâmica: PAM e PAS mínimas e máximas das últimas 12 a 24 h (controle de enfermagem) não encontradas.');
+    if (dva.offNoTime) gap('DVA: tempo desde a suspensão não encontrado (cite horas ou dias, ou a data).');
+    if (/arritmia|\bFA\b|fibrila[çc][ãa]o atrial|taquicardia|bradicardia|flutter|extrass[íi]stole/i.test(evoRaw)) {
+      var arrS = evoS.filter(function (s) { return /arritmia|\bFA\b|fibrila[çc][ãa]o atrial|taquicardia|bradicardia|flutter|extrass[íi]stole/i.test(s); });
+      if (!arrS.some(function (s) { return /reduz|suspens|inici|amiodarona|metoprolol|digoxina|cardiovers|diltiazem|atenolol|ajust|manti/i.test(s); })) gap('Arritmia citada sem conduta associada (medicação reduzida, suspensa ou iniciada, com FC e achado de ECG).');
+    }
+    if (/p[óo]s-operat[óo]rio|\bPO\b/i.test(evoRaw + ctxRaw) && /risco/i.test(evoRaw + ctxRaw) && !(SE.Trop && /RCRI|NSQIP|MICA/i.test(all))) gap('Pós-operatório de risco: troponina diária, ECG diário e escore de risco cardiovascular (RCRI ou NSQIP-MICA) não encontrados.');
+    if (gcs == null && /rebaix|\bRNC\b|sonolent|confus|desorient|agitad|torpor|obnubil/i.test(evoRaw)) gap('Neurológico: Glasgow numérico não encontrado (ex.: "ECG 13, com abertura ocular ao chamado").');
+    if (sedated && rass == null) gap('Paciente sedado: RASS não encontrado (diferencia rebaixamento por sedação de rebaixamento neurológico).');
+    if (/\bAVC\b|acidente vascular/i.test(evoRaw) && !/pr[ée]vio|sequela/i.test(evoRaw) && !/NIHSS\s*[:=]?\s*\d/i.test(all)) gap('AVC: NIHSS com pontuação do dia não encontrado.');
+    if ((o2.cn != null || o2.device) && base == null && !/sem\s+O2\s+domiciliar|n[ãa]o\s+usa\s+O2|sem\s+uso\s+pr[ée]vio\s+de\s+O2/i.test(all)) gap('Respiratório: não está claro se havia O2 domiciliar prévio. Informe (ex.: "sem O2 domiciliar") para comparar a demanda atual com a basal.');
+    if (o2.cn != null && base === true) gap('Respiratório: O2 domiciliar citado sem o fluxo basal em L/min; sem ele não dá para comparar com a demanda atual.');
+    if (o2.vni && !/fixa|programad|\bSOS\b|intermitente|hor[áa]ri/i.test(evoRaw + bhRaw)) gap('VNI: informe se uso fixo (programado) ou SOS, com parâmetros e resposta (alinhar com a nota da fisioterapia).');
+    if (/falha\s+(?:de\s+)?(?:desmame|extuba)/i.test(all) && !/RSBI\s*[:=]?\s*\d/i.test(all)) gap('Falha de desmame citada sem causa objetiva (RSBI, dessaturação ou instabilidade durante o teste).');
+    if ((/taquip|dispneia|desconforto resp/i.test(evoRaw)) && vit.frMin == null) gap('Respiratório: frequência respiratória numérica não encontrada ("taquipneico" e "dispneia" não bastam).');
+    if (ex.undated) gap('Exames sem data: a tendência aparece, mas sem "desde quando". Cole os exames com a data de coleta.');
+    if (!Object.keys(SE).length) gap('Nenhum exame laboratorial com valor foi reconhecido. Cole os exames no formato "26/10: Cr 1,20 | K 3,4 | PCR 20".');
+    if (dday == null) gap('Data da internação não encontrada: o dia de internação foi omitido. Informe no campo de observações (ex.: "internação em 17/10").');
+    var gu = uniq(removedGeneric);
+    if (gu.length) gap('Expressões genéricas removidas do texto (' + gu.join('; ') + '). Confira se o dado objetivo correspondente aparece acima.');
+
+    /* ---------- dados reconhecidos ---------- */
+    function rc(label, value) { recog.push({ label: label, value: value || null }); }
+    rc('Idade', age != null ? age + ' anos' : null);
+    rc('Sexo', sex === 'f' ? 'feminino' : sex === 'm' ? 'masculino' : null);
+    rc('Internação', adm ? fmtDM(adm) + (dday != null ? ' (dia ' + dday + ')' : '') : null);
+    rc('Comorbidades', comorb.length ? comorb.length + ' encontradas' : null);
+    rc('DVA', dva.use ? 'em uso: ' + dva.use : dva.off ? 'suspensa há ' + dva.off.n + ' ' + dva.off.unit : null);
+    rc('PAM 24 h', vit.pamMin != null ? vit.pamMin + (vit.pamMax != null ? ' a ' + vit.pamMax : '') + ' mmHg' : null);
+    rc('PAS 24 h', vit.pasMin != null ? vit.pasMin + ' a ' + vit.pasMax + ' mmHg' : null);
+    rc('Suporte de O2', o2.device || (o2.vni ? 'VNI' : null));
+    rc('O2 domiciliar', typeof base === 'number' ? fmtDec(base) + ' L/min' : base === true ? 'sim, sem fluxo' : null);
+    rc('Glasgow', gcs != null ? String(gcs) : null);
+    rc('RASS', rass);
+    rc('Diurese', bal.diur != null ? fmtInt(bal.diur) + ' mL' : null);
+    rc('Balanço hídrico', bal.bh != null ? (bal.bh < 0 ? '−' : '+') + fmtInt(Math.abs(bal.bh)) + ' mL' : null);
+    rc('Glicemias', gli ? gli.min + ' a ' + gli.max + ' mg/dL' : null);
+    rc('Antibióticos', atbs.length ? atbs.join(', ') : null);
+    rc('Exames em série', Object.keys(SE).length ? Object.keys(SE).map(function (k) { return SE[k].a.label; }).join(', ') : null);
+
+    return { com: secCom, hma: secHma, prob: secProb, sum: secSum, gaps: gaps, recog: recog };
+  }
+
+  var api = { generate: generate, _t: { toNum: toNum, sentencesOf: sentencesOf, degeneric: degeneric, parseExams: parseExams } };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.DiaristaEngine = api;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var SECS = [
+    { key: 'com',  title: 'COMORBIDADES | PROBLEMAS PRÉVIOS' },
+    { key: 'hma',  title: 'HISTÓRIA DE MOLÉSTIA ATUAL' },
+    { key: 'prob', title: 'LISTA DE PROBLEMAS E EXAMES RELEVANTES' },
+    { key: 'sum',  title: 'SUMÁRIO DA INTERNAÇÃO' }
+  ];
+  var FIELDS = ['f-evo', 'f-bh', 'f-exa', 'f-ctx'];
+  var generated = false;
+
+  var secsBox = $('secs');
+  SECS.forEach(function (s) {
+    var art = document.createElement('article');
+    art.className = 'sec' + (s.key === 'sum' ? ' sec-main' : '');
+    var h = document.createElement('div'); h.className = 'sec-h';
+    var h3 = document.createElement('h3'); h3.textContent = s.title;
+    var tools = document.createElement('div'); tools.className = 'sec-tools';
+    var wc = document.createElement('span'); wc.className = 'wc'; wc.id = 'wc-' + s.key;
+    var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn ghost sm'; btn.textContent = 'Copiar';
+    tools.appendChild(wc); tools.appendChild(btn);
+    h.appendChild(h3); h.appendChild(tools);
+    var ta = document.createElement('textarea');
+    ta.className = 'doc'; ta.id = 'out-' + s.key; ta.rows = 2; ta.spellcheck = true;
+    ta.setAttribute('aria-label', s.title);
+    ta.placeholder = 'Aparece aqui depois de gerar.';
+    art.appendChild(h); art.appendChild(ta); secsBox.appendChild(art);
+    ta.addEventListener('input', function () { fit(ta); words(s.key); });
+    btn.addEventListener('click', function () { copyText(ta.value, btn); });
+  });
+
+  function fit(el) { el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; }
+  function words(key) {
+    var v = $('out-' + key).value.trim();
+    var n = v ? v.split(/\s+/).length : 0;
+    $('wc-' + key).textContent = n ? n + ' palavras' : '';
+  }
+  function fitAll() { SECS.forEach(function (s) { fit($('out-' + s.key)); }); }
+  window.addEventListener('resize', fitAll);
+
+  function todayISO() {
+    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  $('f-date').value = todayISO();
+
+  function counts() {
+    FIELDS.forEach(function (id) { $('c-' + id.slice(2)).textContent = $(id).value.length.toLocaleString('pt-BR') + ' car.'; });
+  }
+  FIELDS.forEach(function (id) {
+    $(id).addEventListener('input', counts);
+    $(id).addEventListener('keydown', function (ev) {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') { ev.preventDefault(); run(); }
+    });
+  });
+
+  function setStatus(msg, warn) { var st = $('status'); st.className = 'status' + (warn ? ' warn' : ''); st.textContent = msg; }
+
+  function render(r) {
+    SECS.forEach(function (s) { var el = $('out-' + s.key); el.value = r[s.key] || ''; fit(el); words(s.key); });
+    var ul = $('gaps-ul'); ul.innerHTML = '';
+    r.gaps.forEach(function (t) {
+      var li = document.createElement('li');
+      if (/^ATEN[ÇC][ÃA]O/i.test(t)) li.className = 'alert';
+      li.textContent = t; ul.appendChild(li);
+    });
+    $('gaps').hidden = !r.gaps.length;
+    var dl = $('recog-dl'); dl.innerHTML = '';
+    r.recog.forEach(function (x) {
+      var dt = document.createElement('dt'); dt.textContent = x.label;
+      var dd = document.createElement('dd'); dd.textContent = x.value || 'não encontrado';
+      if (!x.value) dd.className = 'none';
+      dl.appendChild(dt); dl.appendChild(dd);
+    });
+    $('recog').hidden = false;
+  }
+
+  function run() {
+    var inp = { evo: $('f-evo').value, bh: $('f-bh').value, exa: $('f-exa').value, ctx: $('f-ctx').value };
+    if ((inp.evo + inp.bh + inp.exa).trim().length < 30) { setStatus('Cole pelo menos a evolução, o balanço ou os exames para gerar.', true); return; }
+    var size = (document.querySelector('input[name=size]:checked') || {}).value || 'padrao';
+    var r;
+    try { r = window.DiaristaEngine.generate(inp, { date: $('f-date').value || todayISO(), size: size }); }
+    catch (e) { setStatus('Não consegui interpretar o texto colado (' + (e && e.message ? e.message : 'erro') + '). Confira o formato e tente de novo.', true); return; }
+    render(r); generated = true;
+    var n = r.gaps.length;
+    setStatus('Pronto. ' + (n ? n + (n === 1 ? ' item' : ' itens') + ' para completar abaixo. ' : '') + 'Revise antes de colar no prontuário.');
+  }
+  $('b-gen').addEventListener('click', run);
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=size]'), function (i) {
+    i.addEventListener('change', function () { if (generated) run(); });
+  });
+  $('f-date').addEventListener('change', function () { if (generated) run(); });
+
+  function flash(btn, msg) {
+    var old = btn.getAttribute('data-label') || btn.textContent;
+    btn.setAttribute('data-label', old); btn.textContent = msg;
+    setTimeout(function () { btn.textContent = old; }, 1400);
+  }
+  function copyText(t, btn) {
+    if (!t.trim()) { flash(btn, 'Nada a copiar'); return; }
+    function fallback() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        flash(btn, ok ? 'Copiado' : 'Selecione e copie');
+      } catch (e) { flash(btn, 'Selecione e copie'); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () { flash(btn, 'Copiado'); }, fallback);
+    } else fallback();
+  }
+  $('b-copyall').addEventListener('click', function () {
+    var parts = SECS.map(function (s) { var v = $('out-' + s.key).value.trim(); return v ? s.title + '\n' + v : ''; }).filter(Boolean);
+    copyText(parts.join('\n\n'), $('b-copyall'));
+  });
+
+  var armed = false, timer = null;
+  $('b-clear').addEventListener('click', function () {
+    var b = $('b-clear');
+    if (!armed) { armed = true; b.textContent = 'Confirmar: apagar tudo'; timer = setTimeout(function () { armed = false; b.textContent = 'Limpar tudo'; }, 3000); return; }
+    clearTimeout(timer); armed = false; b.textContent = 'Limpar tudo';
+    FIELDS.forEach(function (id) { $(id).value = ''; });
+    SECS.forEach(function (s) { var el = $('out-' + s.key); el.value = ''; fit(el); words(s.key); });
+    $('gaps').hidden = true; $('recog').hidden = true; generated = false; counts();
+    setStatus('Cole os dados e clique em Gerar avaliação.');
+  });
+
+  var EX = {"evo":"EVOLUÇÃO MÉDICA - PLANTÃO NOTURNO - 26/10/2026\nPaciente: TESTE EXEMPLO DA SILVA   Pront: 4521789   CPF 123.456.789-09   Nasc: 03/02/1944\nFeminina, 82 anos. HAS, DM2 insulinodependente (Lantus), DPOC com O2 domiciliar 1 L/min, ICC com FE 45%. Admitida em 17/10/2026 com choque séptico de foco pulmonar (pneumonia), IOT por 4 dias, extubada em 21/10. Noradrenalina suspensa em 22/10.\n\nPaciente segue em grave estado geral. Estabilidade hemodinâmica com boa curva pressórica, já sem vasopressor há 04 dias. Dispneia aos esforços, sob CN 2lpm com oximetria satisfatória. Vígil, colaborativa, ECG 15.\nDiurese espontânea abundante, BH negativo. Escórias com discreta piora (Cr 1,16 > 1,20). K 3,4, em reposição VO. Dieta VO com aceitação parcial. Abdome distendido, RHA presentes, sem evacuar há 3 dias.\nHipoglicemia de 54 mg/dL às 04h, tratada com glicose 50%, mesmo após redução do Lantus de 20 para 14 UI ontem. Conduta: suspenso Lantus, mantido esquema de correção.\nMantém piperacilina-tazobactam (D8). Segue fisioterapia motora e respiratória.","bh":"BALANÇO HÍDRICO 24h (26/10 07h a 27/10 07h)\nEntradas: 1850 mL | Saídas: 2900 mL (diurese 2700 mL = 1,1 mL/kg/h) | BH: -1050 mL | acumulado 3 dias: -2400 mL\nSSVV 24h: FC 78-102 bpm | PAM mín 58 / máx 94 mmHg | PAS mín 92 / máx 148 mmHg | FR 20-26 irpm | SpO2 92-96% em CN 2 L/min | Tax máx 37,6 °C\nPAM 58 mmHg às 03h40, durante diurese de 400 mL/h; sem DVA; cristaloide 250 mL com recuperação para PAM 72.\nGlicemias capilares: 04h 54 | 08h 132 | 12h 118 | 18h 96 | 22h 104","exa":"24/10: Leuco 12.800 | PCR 2 mg/dL | Cr 1,10 | K 3,8\n25/10: Hb 9,8 | Leuco 14.200 | Plaq 245 mil | PCR 7 mg/dL | Cr 1,16 | Ur 48 | Na 138 | K 3,6\n26/10: Hb 9,6 | Leuco 16.000 | Plaq 238 mil | PCR 20 mg/dL | Cr 1,20 | Ur 52 | Na 137 | K 3,4 | Mg 1,8\nHemoculturas 17/10: sem crescimento. Aspirado traqueal 18/10: Klebsiella pneumoniae sensível a piperacilina-tazobactam.\nRx de tórax 26/10: opacidade em base direita, sem novas áreas de consolidação.","ctx":"Internação hospitalar e admissão na UTI em 17/10/2026."};
+  $('b-example').addEventListener('click', function () {
+    $('f-evo').value = EX.evo; $('f-bh').value = EX.bh; $('f-exa').value = EX.exa; $('f-ctx').value = EX.ctx;
+    $('f-date').value = '2026-10-27'; counts();
+    setStatus('Caso fictício carregado. Clique em Gerar avaliação.');
+  });
+
+  counts(); fitAll();
+})();
+</script>
+</body>
+</html>
