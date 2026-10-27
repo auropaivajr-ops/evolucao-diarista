@@ -704,7 +704,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
   /* planilha de BH/controles achatada em uma linha */
   function parseBH(text) {
     var t = String(text || '').replace(/\r/g, ' ').replace(/\s+/g, ' ');
-    if (!/Par[âa]metros\s+Un/i.test(t) && !/Total Ganho/i.test(t)) return null;
+    if (!/ar[âa]metros\s+Un/i.test(t) && !/Total Ganho/i.test(t)) return null;
     function row(label) {
       var re = new RegExp(label + '\\s+((?:-?\\d+(?:,\\d+)?(?:\\s+|$))+)', 'i');
       var m = re.exec(t);
@@ -718,7 +718,13 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var P = { pas: row('PAS\\s+mmHg'), pad: row('PAD\\s+mmHg'), pam: row('PAM\\s+mmHg'), fr: row('FR\\s+(?:mrm|irpm|rpm)'), fc: row('FC\\s+bpm'),
       spo: row('Sat\\s*O2\\s*%'), temp: row('Temp\\s*°?C'), glic: row('Glic\\s*cap\\s*mg\\/dL') };
     P.ganho = tot('Total Ganho'); P.perda = tot('Total Perda'); P.bh = tot('Balan[çc]o\\s*\\(Ganho\\s*-\\s*Perda\\)');
-    P.outrasElim = /Dreno|V[ôo]mito|\bSNG\b|\bSNE\b|Evacua|Fezes|Sangramento|Aspirado|Ostomia|D[ée]bito|Hemodi[áa]lise|Ultrafiltra/i.test(t);
+    P.outrasElim = /Dreno\b|V[ôo]mito|\bSNG\b|\bSNE\b|Sangramento|Aspirado|Ostomia|D[ée]bito|Hemodi[áa]lise|Ultrafiltra/i.test(t);
+    var dr = /(?:sonda vesical[^\d\-]*|diurese[^\d\-]*?|\bSVD\b[^\d\-]*)((?:\d+(?:,\d+)?\s+)+)/i.exec(t + ' ');
+    P.diur = dr ? Math.max.apply(null, dr[1].trim().split(/\s+/).map(toNum)) : null;
+    var fz = /fezes\s+(\w+)\s*-\s*Ocorr[êe]ncias?\s+((?:\d+\s+)+)/i.exec(t + ' ');
+    P.fezes = fz ? { tipo: fz[1].toLowerCase(), n: Math.max.apply(null, fz[2].trim().split(/\s+/).map(Number)) } : null;
+    var ab = /antibi[óo]ticos\s+ml[^a-z]*?([a-zçã]+(?:\s*\([^)]*\))?)\s+\d/i.exec(t);
+    P.atb = ab ? ab[1].trim() : null;
     P.data = (/(\d{2}\/\d{2}\/\d{4})\s+PAS/i.exec(t) || [])[1] || null;
     var dropped = [];
     function clean(arr, lo, hi, name) {
@@ -728,7 +734,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       return ok.length ? ok : null;
     }
     P.pas = clean(P.pas, 40, 300, 'PAS'); P.pad = clean(P.pad, 20, 200, 'PAD'); P.pam = clean(P.pam, 30, 220, 'PAM');
-    P.fr = clean(P.fr, 5, 60, 'FR'); P.fc = clean(P.fc, 20, 250, 'FC'); P.spo = clean(P.spo, 50, 100, 'SpO2');
+    P.fr = clean(P.fr, 5, 45, 'FR'); P.fc = clean(P.fc, 20, 250, 'FC'); P.spo = clean(P.spo, 50, 100, 'SpO2');
     P.temp = clean(P.temp, 30, 43, 'Temp'); P.glic = clean(P.glic, 20, 700, 'Glicemia');
     P.dropped = dropped;
     function rg(a) { return a ? [Math.min.apply(null, a), Math.max.apply(null, a)] : null; }
@@ -743,7 +749,8 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     if (P.ganho != null) bal.push('Entradas: ' + P.ganho + ' mL');
     if (P.perda != null) bal.push('Saídas: ' + P.perda + ' mL');
     if (P.bh != null) bal.push('BH: ' + (P.bh > 0 ? '+' : '') + P.bh + ' mL');
-    if (P.perda != null && !P.outrasElim) bal.push('diurese de ' + P.perda + ' mL');
+    if (P.diur != null) bal.push('diurese de ' + P.diur + ' mL');
+    else if (P.perda != null && !P.outrasElim) bal.push('diurese de ' + P.perda + ' mL');
     if (bal.length) syn.push(bal.join(' | '));
     P.syn = syn.join('\n');
     P.n = P.pas ? P.pas.length : (P.pam ? P.pam.length : 0);
@@ -759,37 +766,37 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     'TROPO T ULTRA': 'Trop', 'PROCALCITONINA': 'PCT', 'DEDIMERO': 'DD', 'DIMEROD': 'DD', 'PH': 'pH', 'BICARBONATO': 'HCO3', 'HCO3': 'HCO3'
   };
   function parseLaudo(text, ref) {
-    if (!/LAUDO COMPARATIVO|O\.S\/Data/i.test(text)) return null;
-    var L = String(text).replace(/\r/g, '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
-    var VAL = /^(?:--|[<>]?\s*\d[\d.,]*)$/, OS = /^\d{2,3}-\d+-\d+$/, DT = /^\d{2}\/\d{2}\/\d{4}$/, TM = /^\d{1,2}:\d{2}(?::\d{2})?$/;
-    var cols = [], got = {}, i = 0;
-    while (i < L.length) {
-      var l = L[i];
-      if (/^O\.S\/Data/i.test(l)) {
-        cols = []; i++;
-        while (i + 1 < L.length && OS.test(L[i]) && DT.test(L[i + 1])) {
-          cols.push({ date: dmToDate(L[i + 1], ref) });
-          i += 2; if (i < L.length && TM.test(L[i])) i++;
+    if (!/O\.S\/Data/i.test(text)) return null;
+    var T = String(text).replace(/\r/g, ' ').replace(/;/g, ' ').split(/\s+/).filter(Boolean);
+    var VAL = /^(?:--|[<>]?\d[\d.,]*)$/, OS = /^\d{2,3}-\d+-\d+$/, DT = /^\d{2}\/\d{2}\/\d{4}$/, TM = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+    var cols = [], got = {}, i = 0, name = [];
+    while (i < T.length) {
+      var tk = T[i];
+      if (/^O\.S\/Data$/i.test(tk)) {
+        cols = []; name = []; i++;
+        if (/^O\.S\.?$/i.test(T[i] || '')) i++;
+        while (i + 1 < T.length && OS.test(T[i]) && DT.test(T[i + 1])) {
+          cols.push({ date: dmToDate(T[i + 1], ref) });
+          i += 2; if (i < T.length && TM.test(T[i])) i++;
         }
         continue;
       }
-      if (cols.length && !VAL.test(l) && /[A-Za-zÀ-ÿ]/.test(l) && !/^(LAUDO|Resultado)/i.test(l)) {
-        var vals = [], j = i + 1;
-        while (j < L.length && vals.length < cols.length && VAL.test(L[j])) { vals.push(L[j]); j++; }
-        if (vals.length === cols.length) {
-          var key = LAUDO_MAP[normName(l)];
-          if (key) {
-            vals.forEach(function (v, idx) {
-              if (v === '--' || !cols[idx].date) return;
-              var arr = got[key] = got[key] || [];
-              var dk = cols[idx].date.getTime();
-              if (!arr.some(function (p) { return p.date.getTime() === dk; })) arr.push({ date: cols[idx].date, raw: v.replace(/\s/g, ''), v: toNum(v), order: idx });
-            });
-          }
-          i = j; continue;
+      if (!cols.length) { i++; continue; }
+      if (!VAL.test(tk)) { name.push(tk); i++; continue; }
+      var vals = [], j = i;
+      while (j < T.length && vals.length < cols.length && VAL.test(T[j])) { vals.push(T[j]); j++; }
+      if (vals.length === cols.length && name.length) {
+        var key = LAUDO_MAP[normName(name.join(' '))];
+        if (key) {
+          vals.forEach(function (v, idx) {
+            if (v === '--' || !cols[idx].date) return;
+            var arr = got[key] = got[key] || [];
+            var dk = cols[idx].date.getTime();
+            if (!arr.some(function (p) { return p.date.getTime() === dk; })) arr.push({ date: cols[idx].date, raw: v, v: toNum(v), order: idx });
+          });
         }
       }
-      i++;
+      name = []; i = j;
     }
     var UN = { Hb: 'g/dL', Cr: 'mg/dL', Ur: 'mg/dL', Na: 'mEq/L', K: 'mEq/L', Mg: 'mg/dL', Lac: 'mmol/L', Plaq: 'mil', Leuco: '/mm³', Hct: '%', Glic: 'mg/dL', PCR: 'mg/dL', BT: 'mg/dL', TGO: 'U/L', TGP: 'U/L', Alb: 'g/dL', CaI: 'mmol/L', P: 'mg/dL' };
     var series = {}, stale = [];
@@ -810,16 +817,51 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     return { series: series, imaging: [], undated: false, stale: stale, laudo: true };
   }
 
+  /* o prontuário às vezes entrega tudo em um parágrafo só, com ";" no lugar das quebras de linha */
+  function flatten(s) {
+    s = String(s || '').replace(/\r/g, '');
+    var nl = (s.match(/\n/g) || []).length, sc = (s.match(/;/g) || []).length;
+    if (sc >= 8 && nl < 8) s = s.replace(/\s*;\s*/g, '\n');
+    return s;
+  }
+  var BH_START = /(?:P)?ar[âa]metros\s+Un\s*med/i, EX_START = /LAUDO COMPARATIVO|resultado atual\s+Resultados anteriores|O\.S\/Data/i;
   /* separa automaticamente o que foi colado numa caixa só */
   function route(inp) {
-    var evo = String(inp.evo || ''), bh = String(inp.bh || ''), exa = String(inp.exa || '');
+    var evo = flatten(inp.evo), bh = flatten(inp.bh), exa = flatten(inp.exa);
     var all = [evo, bh, exa].join('\n');
-    var iB = all.search(/Par[âa]metros\s+Un\b/i), iE = all.search(/LAUDO COMPARATIVO/i);
+    var iB = all.search(BH_START), iE = all.search(EX_START);
     if (iB < 0 && iE < 0) return { evo: evo, bh: bh, exa: exa };
     var marks = [iB, iE].filter(function (x) { return x >= 0; }).sort(function (a, b) { return a - b; });
     var out = { evo: all.slice(0, marks[0]), bh: '', exa: '' };
     if (iB >= 0) out.bh = all.slice(iB, iE > iB ? iE : all.length);
     if (iE >= 0) out.exa = all.slice(iE, iB > iE ? iB : all.length);
+    return out;
+  }
+
+  /* modelo com seções ">>>" (ex.: >>>profilaxias / protocolos, >>>metas e condutas) */
+  function extractSections(text) {
+    var out = { clean: [], plan: [], prof: [], profGap: false };
+    var cur = null;
+    String(text || '').replace(/\r/g, '').replace(/>{3}/g, '\n>>>').split('\n').forEach(function (raw) {
+      var line = raw.trim();
+      if (!line) return;
+      var h = /^>{2,}\s*(.*)$/.exec(line);
+      if (h) { cur = h[1].toLowerCase(); line = ''; return; }
+      line = line.replace(/^plano\s*:\s*/i, '').trim();
+      if (!line) return;
+      if (cur && /metas|condutas/.test(cur)) { out.plan.push(line); return; }
+      if (cur && /profilaxia|protocolo/.test(cur)) {
+        var tev = /^TEV\s*:\s*(.*)$/i.exec(line), ul = /^[ÚU]lcera g[áa]strica\s*:\s*(.*)$/i.exec(line);
+        if (tev || ul) {
+          var po = pickOption((tev || ul)[1], tev ? ['farmacol[óo]gica', 'mec[âa]nica', 'n[ãa]o aplic[áa]vel'] : ['sim', 'n[ãa]o aplic[áa]vel']);
+          if (po.state === 'marcado' || po.state === 'unico') out.prof.push((tev ? 'profilaxia de TEV ' : 'profilaxia de úlcera gástrica ') + lc1(po.val));
+          else out.profGap = true;
+        }
+        return;
+      }
+      out.clean.push(line);
+    });
+    out.clean = out.clean.join('\n');
     return out;
   }
 
@@ -860,7 +902,8 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var evoRaw0 = rt.evo, bhRaw0 = rt.bh, exaRaw = rt.exa, ctxRaw = String(inp.ctx || '');
     var F = isForm(evoRaw0) ? parseForm(evoRaw0) : null;
     var BHP = parseBH(bhRaw0);
-    var evoRaw = F ? synthEvo(F) : evoRaw0;
+    var SEC = F ? null : extractSections(evoRaw0);
+    var evoRaw = F ? synthEvo(F) : SEC.clean;
     var bhRaw = BHP ? BHP.syn : bhRaw0;
     var rangesFromText = !BHP && vitals(bhRaw0).pamMin != null;
     var WIN = BHP ? 'no período registrado' : (F && !rangesFromText ? 'no momento' : 'nas últimas 24 h');
@@ -982,7 +1025,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     arrowFallback(evoRaw, 'Leuco', 'Leuco(?:citos)?', SE);
     arrowFallback(evoRaw, 'K', 'K|Pot[áa]ssio', SE);
 
-    var atbM = /(piperacilina[-\s]?tazobactam|pip-?tazo|meropenem|vancomicina|cefepime|ceftriaxona|ampicilina(?:-sulbactam)?|polimixina(?: B)?|teicoplanina|linezolida|azitromicina|claritromicina|oxacilina|clindamicina|metronidazol|ciprofloxacino|levofloxacino|amicacina|gentamicina|ceftazidima|ertapenem|tigeciclina)(?:[^.\n;,]{0,12}?\bD(\d{1,2})\b)?/gi;
+    var atbM = /(cefazolina|cefoxitina|cefuroxima|amoxicilina(?:-clavulanato)?|penicilina|piperacilina[-\s]?tazobactam|pip-?tazo|meropenem|vancomicina|cefepime|ceftriaxona|ampicilina(?:-sulbactam)?|polimixina(?: B)?|teicoplanina|linezolida|azitromicina|claritromicina|oxacilina|clindamicina|metronidazol|ciprofloxacino|levofloxacino|amicacina|gentamicina|ceftazidima|ertapenem|tigeciclina)(?:[^.\n;,]{0,12}?\bD(\d{1,2})\b)?/gi;
     var atbs = [], am;
     var atbText = all + (F ? '\n' + F.atb : '');
     while ((am = atbM.exec(atbText))) atbs.push(lc1(am[1]) + (am[2] ? ' (D' + am[2] + ')' : ''));
@@ -1053,6 +1096,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       var taxTxt = 'Temperatura máxima de ' + fmtDec(vit.tax) + ' °C ' + WIN;
       if (!hasNum(sentText('infec'), [fmtDec(vit.tax)])) P1.push(endDot(taxTxt));
     }
+    if (BHP && BHP.atb) P1.push(endDot('Recebeu ' + lc1(BHP.atb) + ' no período registrado'));
     if (!BHP && F && F.vit.TEMPERATURA >= 30 && F.vit.TEMPERATURA <= 43) P1.push(endDot('Temperatura de ' + fmtDec(F.vit.TEMPERATURA) + ' °C no momento'));
     if (size !== 'curta') S('infec').forEach(function (s) { P1.push(endDot(s)); });
     else if (atbs.length && !infParts.length) P1.push(endDot('Em uso de ' + listJoin(atbs)));
@@ -1178,6 +1222,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var plS0 = SE.Plaq;
     if (plS0 && lastOf(plS0).unit === 'mil' && lastOf(plS0).v < 100) { var tpl = trendStr(plS0); P3.push(endDot('Plaquetopenia (plaquetas ' + tpl.vals + ' mil' + (tpl.when && plS0.pts.length > 1 ? ', de ' + tpl.when : '') + ')')); }
 
+    if (BHP && BHP.fezes && BHP.fezes.n > 0) P3.push(endDot('Fezes ' + BHP.fezes.tipo + ' (' + BHP.fezes.n + ' ocorrência' + (BHP.fezes.n > 1 ? 's' : '') + ' no período registrado)'));
     if (size !== 'curta') ['gi', 'hema', 'cir', 'mob', 'outros'].forEach(function (k) { S(k).forEach(function (s) { P3.push(endDot(s)); }); });
     var hbS = SE.Hb;
     if (hbS && size !== 'curta') {
@@ -1192,6 +1237,8 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       if (rest.length) P3.push(endDot('Demais exames (último resultado): ' + rest.join('; ')));
     }
 
+    var planItems = F ? F.plan : SEC.plan;
+    if (SEC && SEC.prof.length) planItems = SEC.prof.map(cap1).concat(planItems);
     /* P4: motivo de permanência */
     var crit = [];
     if (dva.use) crit.push({ t: 'uso de droga vasoativa (' + dva.use + ')', pr: 1 });
@@ -1227,6 +1274,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var plS = SE.Plaq;
     if (plS && lastOf(plS).unit === 'mil' && lastOf(plS).v < 50) crit.push({ t: 'plaquetopenia (' + lastOf(plS).raw + ' mil)', pr: 5 });
     if (/programa[çc][ãa]o cir[úu]rgica|aguarda (?:a )?cirurgia|pr[ée]-operat[óo]rio/i.test(all + ' ' + (F ? F.hma.join(' ') + ' ' + F.dx + ' ' + F.imp.join(' ') : ''))) crit.push({ t: 'programação cirúrgica' + (dx ? ' (' + lc1(dx.replace(/\s*com programa[çc][ãa]o cir[úu]rgica/i, '')) + ')' : '') + (F && F.planExam ? ', com ' + F.planExam + ' solicitado' : ''), pr: 4 });
+    if (/desmame de (?:O2|oxig[êe]nio)/i.test(planItems.join(' '))) crit.push({ t: 'suporte de O2 em desmame (conduta do plano)', pr: 3 });
     crit.sort(function (a, b) { return a.pr - b.pr; });
     var maxC = size === 'curta' ? 3 : (size === 'detalhada' ? 99 : 6);
     var critShow = crit.slice(0, maxC).map(function (c) { return c.t; });
@@ -1238,7 +1286,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     }
 
     var PL = [];
-    if (F && F.plan.length && size !== 'curta') PL.push(endDot('Plano: ' + F.plan.map(function (p) { return /^[A-Z][a-zà-ÿ]/.test(p) ? lc1(p) : p; }).join('; ')));
+    if (planItems.length && size !== 'curta') PL.push(endDot('Plano: ' + planItems.map(function (p) { return /^[A-Z][a-zà-ÿ]/.test(p) ? lc1(p) : p; }).join('; ')));
     var paras = [P1, P2, P3, PL, P4].map(function (p) { return p.join(' '); }).filter(Boolean);
     var secSum = paras.join('\n\n');
 
@@ -1310,6 +1358,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     if ((/taquip|dispneia|desconforto resp/i.test(evoRaw)) && vit.frMin == null) gap('Respiratório: frequência respiratória numérica não encontrada ("taquipneico" e "dispneia" não bastam).');
     if (ex.undated) gap('Exames sem data: a tendência aparece, mas sem "desde quando". Cole os exames com a data de coleta.');
     if (!Object.keys(SE).length) gap('Nenhum exame laboratorial com valor foi reconhecido. Cole os exames no formato "26/10: Cr 1,20 | K 3,4 | PCR 20".');
+    if (SEC && SEC.profGap) gap('Profilaxias (TEV e úlcera gástrica): as opções do modelo vieram sem marcação (todas aparecem juntas). Informe o que foi adotado.');
     if (F && F.dva === 'ambiguo') gap('Vasoativos: o campo "Inotrópico e vasoativos" veio sem marcação (aparecem "Não" e "Sim" juntos). Informe se há DVA.');
     if (F && !F.plan.some(function (p) { return /dieta/i.test(p); })) gap('Dieta: opções do formulário sem marcação; informe a dieta atual.');
     if (fDropped.length) gap('Valores improváveis desconsiderados (provável erro de aferição ou digitação): ' + fDropped.join('; ') + '. Confira no prontuário.');
