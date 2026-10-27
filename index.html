@@ -115,17 +115,17 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       <div class="field">
         <div class="field-top"><label class="name" for="f-evo">Evolução</label><span class="count" id="c-evo">0 car.</span></div>
         <p class="hint">Evolução do plantonista e/ou do dia anterior, como está no prontuário.</p>
-        <textarea class="raw" id="f-evo" spellcheck="false" placeholder="Cole aqui o texto da evolução médica…"></textarea>
+        <textarea class="raw" id="f-evo" spellcheck="false" placeholder="Cole aqui a evolução (formulário do prontuário). Se colar tudo junto aqui, o app separa BH e exames sozinho."></textarea>
       </div>
       <div class="field">
         <div class="field-top"><label class="name" for="f-bh">Balanço hídrico e controles</label><span class="count" id="c-bh">0 car.</span></div>
         <p class="hint">BH, diurese, sinais vitais das últimas 24 h (PAM e PAS mín./máx.), glicemias, suporte ventilatório.</p>
-        <textarea class="raw" id="f-bh" spellcheck="false" placeholder="Cole aqui o balanço hídrico e os controles de enfermagem…"></textarea>
+        <textarea class="raw" id="f-bh" spellcheck="false" placeholder="Cole aqui a planilha de balanço hídrico e controles (a linha achatada serve)…"></textarea>
       </div>
       <div class="field">
         <div class="field-top"><label class="name" for="f-exa">Exames</label><span class="count" id="c-exa">0 car.</span></div>
         <p class="hint">Uma linha por data, ex.: 26/10: Cr 1,20 | K 3,4 | PCR 20. Imagem e culturas em linhas separadas.</p>
-        <textarea class="raw" id="f-exa" spellcheck="false" placeholder="Cole aqui os exames laboratoriais, de imagem e culturas…"></textarea>
+        <textarea class="raw" id="f-exa" spellcheck="false" placeholder="Cole aqui o laudo comparativo de exames (e imagens/culturas, se houver)…"></textarea>
       </div>
       <div class="field">
         <div class="field-top"><label class="name" for="f-ctx">Sumário anterior ou observações <span style="font-weight:400;color:var(--muted)">(opcional)</span></label><span class="count" id="c-ctx">0 car.</span></div>
@@ -190,7 +190,8 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     return parseFloat(s);
   }
   function pad(n) { return String(n).padStart(2, '0'); }
-  function fmtDM(d) { return pad(d.getDate()) + '/' + pad(d.getMonth() + 1); }
+  var REF = null;
+  function fmtDM(d) { var s = pad(d.getDate()) + '/' + pad(d.getMonth() + 1); if (REF && Math.round((REF.getTime() - d.getTime()) / 86400000) > 120) s += '/' + pad(d.getFullYear() % 100); return s; }
   function parseISO(s) { var p = s.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); }
   function dmToDate(str, ref) {
     var m = String(str).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
@@ -277,12 +278,12 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
   /* ---------- sistemas ---------- */
   var SYS = [
     { k: 'neuro', re: /Glasgow|\bECG\s*\d|RASS|seda[çc][ãa]o|sedad|v[ií]gil|consciente|orientad|rebaix|delirium|CAM-ICU|NIHSS|pupila|d[eé]ficit|convuls|agitad|sonolent|colaborativ|confus/i },
-    { k: 'hemo', re: /\bPAM\b|\bPAS\b|press[ãa]o arterial|\bDVA\b|vasopressor|vasoativa|noradrenalina|norepinefrina|vasopressina|dobutamina|\bFC\b|taquicardi|bradicardi|arritmia|\bFA\b|hemodin|choque|troponina|\bECG\b(?!\s*\d)/i },
-    { k: 'resp', re: /\bO2\b|oxig|\bCN\b|cateter nasal|m[áa]scara|\bVNI\b|BiPAP|CPAP|\bVM\b|ventila|\bIOT\b|\bTOT\b|\bTQT\b|traqueo|extuba|intuba|SpO2|satura[çc]|dispneia|\bFR\b|taquip|eupne|tosse|secre[çc]|desmame|RSBI|gasometria|DPOC|fisioterapia respirat/i },
+    { k: 'hemo', re: /ritmo card[ií]aco|bulhas|sopros?\b|\bRCR\b|\bPAM\b|\bPAS\b|press[ãa]o arterial|\bDVA\b|vasopressor|vasoativa|noradrenalina|norepinefrina|vasopressina|dobutamina|\bFC\b|taquicardi|bradicardi|arritmia|\bFA\b|hemodin|choque|troponina|\bECG\b(?!\s*\d)/i },
+    { k: 'resp', re: /murm[úu]rio vesicular|ru[ií]dos advent[ií]cios|ar ambiente|\bO2\b|oxig|\bCN\b|cateter nasal|m[áa]scara|\bVNI\b|BiPAP|CPAP|\bVM\b|ventila|\bIOT\b|\bTOT\b|\bTQT\b|traqueo|extuba|intuba|SpO2|satura[çc]|dispneia|\bFR\b|taquip|eupne|tosse|secre[çc]|desmame|RSBI|gasometria|DPOC|fisioterapia respirat/i },
     { k: 'infec', re: /\bATB\b|antibi|piperacilina|pip-?tazo|meropenem|vancomicina|cefepime|ceftriaxona|ampicilina|polimixina|teicoplanina|cultura|febre|\bTax\b|\bPCR\b|leuc|procalcitonina|infec|pneumonia|sepse|s[ée]ptic|foco/i },
-    { k: 'renal', re: /diurese|\bBH\b|balan[çc]o h[ií]drico|creatinina|\bCr\b|esc[óo]rias|ur[eé]ia|olig[úu]ria|an[úu]ria|dial[ií]t|hemodi[áa]lise|\bTRS\b|CVVH|edema/i },
+    { k: 'renal', re: /diurese|\bBH\b|balan[çc]o h[ií]drico|creatinina|\bCr\b|esc[óo]rias|fun[çc][ãa]o renal|ur[eé]ia|olig[úu]ria|an[úu]ria|dial[ií]t|hemodi[áa]lise|\bTRS\b|CVVH|edema/i },
     { k: 'meta', re: /glicemi|insulina|Lantus|\bNPH\b|Novorapid|hipoglic|hiperglic|pot[áa]ssio|\bK\b|s[óo]dio|\bNa\b|magn[ée]sio|\bMg\b|c[áa]lcio|f[óo]sforo|acidose|lactato|reposi[çc]/i },
-    { k: 'gi', re: /dieta|\bSNE\b|\bSNG\b|\bNPT\b|abdome|\bRHA\b|evacu|constipa|diarr|n[áa]usea|v[ôo]mito|[ií]leo|fezes|aceita[çc]/i },
+    { k: 'gi', re: /ru[ií]dos hidroa[ée]reos|\bRHA\b|irrita[çc][ãa]o|dieta|\bSNE\b|\bSNG\b|\bNPT\b|abdome|\bRHA\b|evacu|constipa|diarr|n[áa]usea|v[ôo]mito|[ií]leo|fezes|aceita[çc]/i },
     { k: 'hema', re: /\bHb\b|hemoglobina|transfus|plaquet|sangramento|anticoag|heparina|enoxaparina|\bTEV\b|\bINR\b|\bTAP\b/i },
     { k: 'cir', re: /ferida|curativo|\bdreno\b|\bFO\b|sutura|\bpele\b|\bLPP\b|les[ãa]o por press|estoma|colostomia|abdome aberto/i },
     { k: 'mob', re: /fisioterapia motora|mobiliza|reabilita|sedestação|ortostatismo|\bfisioterapia\b/i }
@@ -471,7 +472,14 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     { k: 'TGP', re: 'TGP|ALT', label: 'TGP', unit: 'U/L', sys: 'hepa' },
     { k: 'BT', re: 'BT|Bilirrubina total', label: 'BT', unit: 'mg/dL', sys: 'hepa' },
     { k: 'INR', re: 'INR', label: 'INR', unit: '', sys: 'hema' },
-    { k: 'Trop', re: 'Troponina|Trop', label: 'Troponina', unit: '', sys: 'hemo' }
+    { k: 'Trop', re: 'Troponina|Trop', label: 'Troponina', unit: '', sys: 'hemo' },
+    { k: 'Glic', re: 'Glicose', label: 'Glicose', unit: 'mg/dL', sys: 'meta' },
+    { k: 'CaI', re: 'Ca\\s*i[oô]nico', label: 'Ca iônico', unit: 'mmol/L', sys: 'meta' },
+    { k: 'P', re: 'F[óo]sforo', label: 'Fósforo', unit: 'mg/dL', sys: 'meta' },
+    { k: 'Alb', re: 'Albumina', label: 'Albumina', unit: 'g/dL', sys: 'hepa' },
+    { k: 'Hct', re: 'Hemat[óo]crito|Hct', label: 'Hematócrito', unit: '%', sys: 'hema' },
+    { k: 'DD', re: 'D-?d[íi]mero', label: 'D-dímero', unit: 'ng/mL', sys: 'hema' },
+    { k: 'TTPA', re: 'TTPA', label: 'TTPA (relação)', unit: '', sys: 'hema' }
   ];
   var IMG_RE = /cultura|aspirado|swab|\bRx\b|raio|\bTC\b|tomografia|\bUSG\b|ultra|\beco\b|ecocardio|angio|resson[âa]ncia|\bRM\b|doppler|\bEEG\b|eletrocardiograma/i;
 
@@ -540,12 +548,323 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     series[key] = { a: a, pts: pts };
   }
 
+  /* ---------- formatos reais do prontuário (formulário, planilha de BH, laudo comparativo) ---------- */
+  var ACR = /^(HAS|DM|DPOC|ECOTT|ECO|TEV|UTI|IOT|VM|AVP|PAM|PAS|PAD|FC|FR|ECG|RX|TC|RM|AVC|IAM|ICC|DRC|FA|CN|VNI|SNE|SNG|CVC|PICC|HIV|TGO|TGP|PCR|NAS|RHA|MV|RCR|BNF|RA|PO|DVA|BH|SVD|TOT|TQT|LPP|AIT|ATB|USG|EEG|TEP|TVP|IRC|RASS|CAM-ICU|D|SC|EV|VO|BIC|SAT|O2)$/;
+  function sentenceCase(s) {
+    s = String(s || '');
+    var letters = s.replace(/[^A-Za-zÀ-ÿ]/g, '');
+    if (letters.length < 5) return s;
+    var up = letters.replace(/[^A-ZÀ-Þ]/g, '').length;
+    if (up / letters.length < 0.7) return s;
+    var t = s.split(/(\s+)/).map(function (tok) {
+      var core = tok.replace(/[^A-Za-zÀ-ÿ0-9\-]/g, '');
+      return ACR.test(core) ? tok : tok.toLowerCase();
+    }).join('');
+    return t.replace(/(^|[.!?]\s+)([a-zà-ÿ])/g, function (m, a, b) { return a + b.toUpperCase(); });
+  }
+  var EXPAND = [
+    [/\bMV\s*\+/gi, 'murmúrio vesicular presente'],
+    [/\bsem\s+RA\b/gi, 'sem ruídos adventícios'],
+    [/\bRCR\s+em\s+2T\b/gi, 'ritmo cardíaco regular em 2 tempos'],
+    [/\bBNF\b/gi, 'bulhas normofonéticas'],
+    [/\bRHA\s*\+/gi, 'ruídos hidroaéreos presentes'],
+    [/\bRHA\s*-/gi, 'ruídos hidroaéreos ausentes']
+  ];
+  function expandAbbr(s) {
+    EXPAND.forEach(function (e) { s = s.replace(e[0], e[1]); });
+    return s.replace(/([a-zà-ÿ+])\s+sem\s/gi, '$1, sem ');
+  }
+  function isForm(text) {
+    return /NO MOMENTO/.test(text) && /AVALIA[ÇC][ÃA]O\s*\|\s*IMPRESS[ÃA]O|PLANO TERAP[ÊE]UTICO|ADMISS[ÃA]O UNIDADES?/i.test(text);
+  }
+  /* escolha de opções (checkbox perdido ao copiar): só aceita se houver marcador ou opção única */
+  function pickOption(val, opts) {
+    var v = String(val || '').trim();
+    if (!v) return { state: 'vazio' };
+    var mk = new RegExp('[☒☑✔✓✅■▣xX]\\s*(' + opts.join('|') + ')\\b', 'i').exec(v);
+    if (mk) return { state: 'marcado', val: mk[1] };
+    var present = opts.filter(function (o) { return new RegExp('\\b' + o + '\\b', 'i').test(v); });
+    if (present.length === 1) return { state: 'unico', val: present[0], rest: v };
+    if (present.length > 1) return { state: 'ambiguo' };
+    return { state: 'texto', val: v };
+  }
+
+  function parseForm(text) {
+    var lines = String(text).replace(/\r/g, '').replace(/ /g, ' ').split('\n');
+    var cut = -1;
+    lines.forEach(function (l, i) { if (cut < 0 && /^-{5,}\s*$/.test(l.trim())) cut = i; });
+    if (cut >= 0) lines = lines.slice(0, cut);
+    var F = { hma: [], dx: '', hist: '', atb: '', cult: '', devices: '', allergy: '', vit: {}, gcs: null, imp: [], plan: [], planExam: '', pool: [], gaps: [], dva: null, admDate: null, vent: '' };
+    var LBL = [
+      ['hma', /^Hist[óo]ria da mol[ée]stia atual\s*:\s*(.*)$/i],
+      ['dx', /^Diagn[óo]stico\s*:\s*(.*)$/i],
+      ['hist', /^Hist[óo]ria pregressa\s*:\s*(.*)$/i],
+      ['med', /^Medica[çc][ãa]o de uso pr[ée]vio\s*:\s*(.*)$/i],
+      ['allergy', /^Alergias\s*:\s*(.*)$/i],
+      ['atb', /^Antimicrobianos e datas\s*:\s*(.*)$/i],
+      ['cult', /^Culturas\/Antibiogramas e datas\s*:\s*(.*)$/i],
+      ['devices', /^Dispositivos em uso e datas\s*:\s*(.*)$/i],
+      ['assist', /^M[ée]dico Assistente\s*:\s*(.*)$/i]
+    ];
+    var buf = { hma: [], dx: [], hist: [], med: [], allergy: [], atb: [], cult: [], devices: [], assist: [] };
+    var cur = null, sec = null, sub = null;
+    var exam = { neuro: [], resp: [], cardio: [], gi: [], renal: [], hema: [] };
+    var extra = { gi: [], neuro: [] };
+    var planLines = [], impLines = [];
+    lines.forEach(function (raw) {
+      var line = raw.replace(/^[\s•]+/, '').trim();
+      if (!line) return;
+      if (/^ADMISS[ÃA]O UNIDADES/i.test(line)) return;
+      if (/^RISCOS ASSISTENCIAIS/i.test(line)) { sec = 'risk'; cur = null; return; }
+      if (/^NO MOMENTO/.test(line)) { sec = 'momento'; cur = null; return; }
+      if (/^AVALIA[ÇC][ÃA]O\s*\|\s*IMPRESS[ÃA]O/i.test(line)) { sec = 'aval'; cur = null; return; }
+      if (/^PLANO TERAP[ÊE]UTICO/i.test(line)) { sec = 'plano'; cur = null; return; }
+      if (sec == null || sec === 'head') {
+        for (var i = 0; i < LBL.length; i++) {
+          var m = LBL[i][1].exec(line);
+          if (m) { cur = LBL[i][0]; if (m[1].trim()) buf[cur].push(m[1].trim()); return; }
+        }
+        if (cur) buf[cur].push(line);
+        return;
+      }
+      if (sec === 'risk') {
+        var lp = /Risco de les[ãa]o de press[ãa]o\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(line);
+        if (lp) F.admDate = lp[1];
+        return;
+      }
+      if (sec === 'momento') {
+        var up = line.replace(/^-\s*/, '');
+        var hm;
+        if (/^GERAL\s*:/i.test(up)) { sub = 'geral'; return; }
+        if (/^NEUROL[ÓO]GICO/i.test(up)) { sub = 'neuro'; return; }
+        if (/^RESPIRAT[ÓO]RIO/i.test(up)) { sub = 'resp'; return; }
+        if (/^CARDIOVASCULAR/i.test(up)) { sub = 'cardio'; return; }
+        if (/^GASTROINTESTINAL/i.test(up)) { sub = 'gi'; return; }
+        if (/^RENAL\s*\|\s*METAB/i.test(up)) { sub = 'renal'; return; }
+        if (/^HEMATOL[ÓO]GICO/i.test(up)) { sub = 'hema'; return; }
+        if (/SINAIS VITAIS/i.test(up)) {
+          var re = /(PAS|PAD|PAM|FC|FR|SAT\.?\s*O2|TEMPERATURA|DOR)\s*:\s*(\d+(?:[.,]\d+)?)/gi, pm;
+          while ((pm = re.exec(up))) {
+            var key = pm[1].toUpperCase().replace(/[^A-Z0-9]/g, '');
+            F.vit[key] = toNum(pm[2]);
+          }
+          return;
+        }
+        if ((hm = /GLASGOW\s*:\s*(\d{1,2})/i.exec(up))) { F.gcs = Number(hm[1]); return; }
+        if (/^CAM-ICU/i.test(up)) return;
+        if (/^SEDA[ÇC][ÃA]O/i.test(up)) {
+          var sv = up.replace(/^SEDA[ÇC][ÃA]O\s*:\s*/i, '').replace(/Qual,?\s*e,?\s*dose\??/i, '').trim();
+          if (sv && !/^(sem|n[ãa]o|nenhuma?|-)$/i.test(sv)) extra.neuro.push('Sedação: ' + sv);
+          return;
+        }
+        if (/^SUPORTE VENTILAT[ÓO]RIO/i.test(up)) {
+          F.vent = up.replace(/^SUPORTE VENTILAT[ÓO]RIO\s*:\s*/i, '').trim();
+          return;
+        }
+        if (/^INOTR[ÓO]PICO/i.test(up)) {
+          var po = pickOption(up.replace(/^INOTR[ÓO]PICO E VASOATIVOS\s*:\s*/i, ''), ['N[ãa]o', 'Sim']);
+          if (po.state === 'marcado' || po.state === 'unico') F.dva = /^n/i.test(po.val) ? 'nao' : 'sim';
+          else if (po.state === 'texto') F.dva = 'texto:' + po.val;
+          else F.dva = 'ambiguo';
+          return;
+        }
+        if (/^DIETA\s*:/i.test(up) || /^USO DE INSULINA/i.test(up) || /^OUTROS\s*:/i.test(up)) return;
+        if ((hm = /^EVACUA[ÇC][ÕO]ES\s*:\s*(\d+)/i.exec(up))) { extra.gi.push(hm[1] === '0' ? 'Sem evacuação no período' : 'Evacuações: ' + hm[1]); return; }
+        if ((hm = /^EXAME CL[ÍI]NICO\s*:?\s*(.*)$/i.exec(up))) {
+          if (hm[1].trim() && exam[sub]) exam[sub].push(hm[1].trim());
+          return;
+        }
+        if ((hm = /^Renal\s*:\s*(.+)$/i.exec(up))) { exam.renal.push(hm[1].trim()); return; }
+        if (up.length > 3 && sub === 'hema' && !/^-?$/.test(up)) exam.hema.push(up);
+        return;
+      }
+      if (sec === 'aval') { impLines.push(line.replace(/^-\s*/, '')); return; }
+      if (sec === 'plano') {
+        var pl = line.replace(/^-\s*/, '');
+        if (/^(<|>)\s*\d|^\d+h?\s*-\s*\d+|Previs[ãa]o de alta|Familia|Fam[íi]lia|^<\s*48|^48h/i.test(pl)) return;
+        planLines.push(pl);
+      }
+    });
+    function J(a) { return a.join(' ').replace(/\s+/g, ' ').trim(); }
+    sentencesOf([sentenceCase(J(buf.hma))]).forEach(function (s) { F.hma.push(cap1(s)); });
+    F.dx = sentenceCase(J(buf.dx));
+    F.hist = sentenceCase(J(buf.hist));
+    F.med = sentenceCase(J(buf.med));
+    F.allergy = sentenceCase(J(buf.allergy));
+    F.atb = sentenceCase(J(buf.atb));
+    F.cult = sentenceCase(J(buf.cult));
+    F.devices = sentenceCase(J(buf.devices));
+    F.exam = exam; F.extra = extra;
+    F.imp = sentencesOf([sentenceCase(J(impLines))]);
+    F.plan = planLines.map(function (p) { return sentenceCase(p).replace(/\s+/g, ' ').trim(); }).filter(function (p) { return p.length > 3; });
+    F.plan.forEach(function (p) { var m = /^Solicit\w+\s+(.+)$/i.exec(p); if (m && !F.planExam) F.planExam = m[1].trim(); });
+    return F;
+  }
+
+  /* planilha de BH/controles achatada em uma linha */
+  function parseBH(text) {
+    var t = String(text || '').replace(/\r/g, ' ').replace(/\s+/g, ' ');
+    if (!/Par[âa]metros\s+Un/i.test(t) && !/Total Ganho/i.test(t)) return null;
+    function row(label) {
+      var re = new RegExp(label + '\\s+((?:-?\\d+(?:,\\d+)?(?:\\s+|$))+)', 'i');
+      var m = re.exec(t);
+      if (!m) return null;
+      return m[1].trim().split(/\s+/).map(toNum).filter(function (x) { return isFinite(x); });
+    }
+    function tot(label) {
+      var m = new RegExp(label + '\\s*:?\\s*([+\\-−–]?\\s*[\\d.]+(?:,\\d+)?)', 'i').exec(t);
+      return m ? toNum(m[1]) : null;
+    }
+    var P = { pas: row('PAS\\s+mmHg'), pad: row('PAD\\s+mmHg'), pam: row('PAM\\s+mmHg'), fr: row('FR\\s+(?:mrm|irpm|rpm)'), fc: row('FC\\s+bpm'),
+      spo: row('Sat\\s*O2\\s*%'), temp: row('Temp\\s*°?C'), glic: row('Glic\\s*cap\\s*mg\\/dL') };
+    P.ganho = tot('Total Ganho'); P.perda = tot('Total Perda'); P.bh = tot('Balan[çc]o\\s*\\(Ganho\\s*-\\s*Perda\\)');
+    P.outrasElim = /Dreno|V[ôo]mito|\bSNG\b|\bSNE\b|Evacua|Fezes|Sangramento|Aspirado|Ostomia|D[ée]bito|Hemodi[áa]lise|Ultrafiltra/i.test(t);
+    P.data = (/(\d{2}\/\d{2}\/\d{4})\s+PAS/i.exec(t) || [])[1] || null;
+    var dropped = [];
+    function clean(arr, lo, hi, name) {
+      if (!arr) return null;
+      var ok = arr.filter(function (x) { return x >= lo && x <= hi; });
+      if (ok.length < arr.length) dropped.push(name + ' ' + arr.filter(function (x) { return !(x >= lo && x <= hi); }).join(', '));
+      return ok.length ? ok : null;
+    }
+    P.pas = clean(P.pas, 40, 300, 'PAS'); P.pad = clean(P.pad, 20, 200, 'PAD'); P.pam = clean(P.pam, 30, 220, 'PAM');
+    P.fr = clean(P.fr, 5, 60, 'FR'); P.fc = clean(P.fc, 20, 250, 'FC'); P.spo = clean(P.spo, 50, 100, 'SpO2');
+    P.temp = clean(P.temp, 30, 43, 'Temp'); P.glic = clean(P.glic, 20, 700, 'Glicemia');
+    P.dropped = dropped;
+    function rg(a) { return a ? [Math.min.apply(null, a), Math.max.apply(null, a)] : null; }
+    var s = [];
+    function add(lbl, a, suf) { var r = rg(a); if (r) s.push(lbl + ' ' + r[0] + ' a ' + r[1] + (suf || '')); }
+    add('PAM', P.pam); add('PAS', P.pas); add('FC', P.fc); add('FR', P.fr); add('SpO2', P.spo, '%');
+    var syn = [];
+    if (s.length) syn.push('SSVV: ' + s.join(' | '));
+    if (P.temp) syn.push('Tax máx ' + String(Math.max.apply(null, P.temp)).replace('.', ','));
+    if (P.glic) syn.push('Glicemias: ' + P.glic.join(' '));
+    var bal = [];
+    if (P.ganho != null) bal.push('Entradas: ' + P.ganho + ' mL');
+    if (P.perda != null) bal.push('Saídas: ' + P.perda + ' mL');
+    if (P.bh != null) bal.push('BH: ' + (P.bh > 0 ? '+' : '') + P.bh + ' mL');
+    if (P.perda != null && !P.outrasElim) bal.push('diurese de ' + P.perda + ' mL');
+    if (bal.length) syn.push(bal.join(' | '));
+    P.syn = syn.join('\n');
+    P.n = P.pas ? P.pas.length : (P.pam ? P.pam.length : 0);
+    return P;
+  }
+
+  /* laudo comparativo achatado: nome do exame + 1 valor por coluna, "--" = sem resultado, coluna 1 = mais recente */
+  function normName(s) { return String(s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }
+  var LAUDO_MAP = {
+    'GLICOSE': 'Glic', 'UREIA': 'Ur', 'CREATININA': 'Cr', 'SODIO': 'Na', 'POTASSIO': 'K', 'CALCIO IONICO': 'CaI', 'MAGNESIO': 'Mg',
+    'FOSFORO': 'P', 'ALBUMINA': 'Alb', 'BIL TOTAIS': 'BT', 'TGO': 'TGO', 'TGP': 'TGP', 'LACTATO': 'Lac', 'PCR': 'PCR',
+    'HEMATOCRITO': 'Hct', 'HEMOGLOBINA': 'Hb', 'LEUCOCITOS': 'Leuco', 'PLAQUETAS': 'Plaq', 'RNI': 'INR', 'TTPA-RELACAO (P/C)': 'TTPA',
+    'TROPO T ULTRA': 'Trop', 'PROCALCITONINA': 'PCT', 'DEDIMERO': 'DD', 'DIMEROD': 'DD', 'PH': 'pH', 'BICARBONATO': 'HCO3', 'HCO3': 'HCO3'
+  };
+  function parseLaudo(text, ref) {
+    if (!/LAUDO COMPARATIVO|O\.S\/Data/i.test(text)) return null;
+    var L = String(text).replace(/\r/g, '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var VAL = /^(?:--|[<>]?\s*\d[\d.,]*)$/, OS = /^\d{2,3}-\d+-\d+$/, DT = /^\d{2}\/\d{2}\/\d{4}$/, TM = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+    var cols = [], got = {}, i = 0;
+    while (i < L.length) {
+      var l = L[i];
+      if (/^O\.S\/Data/i.test(l)) {
+        cols = []; i++;
+        while (i + 1 < L.length && OS.test(L[i]) && DT.test(L[i + 1])) {
+          cols.push({ date: dmToDate(L[i + 1], ref) });
+          i += 2; if (i < L.length && TM.test(L[i])) i++;
+        }
+        continue;
+      }
+      if (cols.length && !VAL.test(l) && /[A-Za-zÀ-ÿ]/.test(l) && !/^(LAUDO|Resultado)/i.test(l)) {
+        var vals = [], j = i + 1;
+        while (j < L.length && vals.length < cols.length && VAL.test(L[j])) { vals.push(L[j]); j++; }
+        if (vals.length === cols.length) {
+          var key = LAUDO_MAP[normName(l)];
+          if (key) {
+            vals.forEach(function (v, idx) {
+              if (v === '--' || !cols[idx].date) return;
+              var arr = got[key] = got[key] || [];
+              var dk = cols[idx].date.getTime();
+              if (!arr.some(function (p) { return p.date.getTime() === dk; })) arr.push({ date: cols[idx].date, raw: v.replace(/\s/g, ''), v: toNum(v), order: idx });
+            });
+          }
+          i = j; continue;
+        }
+      }
+      i++;
+    }
+    var UN = { Hb: 'g/dL', Cr: 'mg/dL', Ur: 'mg/dL', Na: 'mEq/L', K: 'mEq/L', Mg: 'mg/dL', Lac: 'mmol/L', Plaq: 'mil', Leuco: '/mm³', Hct: '%', Glic: 'mg/dL', PCR: 'mg/dL', BT: 'mg/dL', TGO: 'U/L', TGP: 'U/L', Alb: 'g/dL', CaI: 'mmol/L', P: 'mg/dL' };
+    var series = {}, stale = [];
+    Object.keys(got).forEach(function (k) {
+      var a = ANALYTES.filter(function (x) { return x.k === k; })[0];
+      if (!a) return;
+      var pts = got[k].sort(function (x, y) { return x.date - y.date; });
+      var newest = pts[pts.length - 1];
+      if (daysBetween(newest.date, ref) > 3) { stale.push(a.label); return; }
+      var recent = pts.filter(function (p) { return daysBetween(p.date, newest.date) <= 30; }).slice(-3);
+      if (recent.length < 2 && pts.length > recent.length) {
+        var prevP = pts[pts.length - 1 - recent.length];
+        if (daysBetween(prevP.date, newest.date) <= 400) recent.unshift(prevP);
+      }
+      recent.forEach(function (p) { p.unit = UN[k] || ''; });
+      series[k] = { a: a, pts: recent };
+    });
+    return { series: series, imaging: [], undated: false, stale: stale, laudo: true };
+  }
+
+  /* separa automaticamente o que foi colado numa caixa só */
+  function route(inp) {
+    var evo = String(inp.evo || ''), bh = String(inp.bh || ''), exa = String(inp.exa || '');
+    var all = [evo, bh, exa].join('\n');
+    var iB = all.search(/Par[âa]metros\s+Un\b/i), iE = all.search(/LAUDO COMPARATIVO/i);
+    if (iB < 0 && iE < 0) return { evo: evo, bh: bh, exa: exa };
+    var marks = [iB, iE].filter(function (x) { return x >= 0; }).sort(function (a, b) { return a - b; });
+    var out = { evo: all.slice(0, marks[0]), bh: '', exa: '' };
+    if (iB >= 0) out.bh = all.slice(iB, iE > iB ? iE : all.length);
+    if (iE >= 0) out.exa = all.slice(iE, iB > iE ? iB : all.length);
+    return out;
+  }
+
+  function normTxt(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, ''); }
+  function synthEvo(F) {
+    var impN = normTxt(F.imp.join(' '));
+    function clauses(arr) {
+      var out = [];
+      arr.forEach(function (t) { expandAbbr(t).split(/\s*,\s*/).forEach(function (c) { c = c.trim(); if (c) out.push(c); }); });
+      return out.filter(function (c) { var n = normTxt(c); return !(n.length > 5 && impN.indexOf(n) >= 0); });
+    }
+    function sent(parts) { parts = parts.filter(Boolean); return parts.length ? cap1(parts.join(', ')) + '.' : ''; }
+    var out = [];
+    var neu = clauses(F.exam.neuro);
+    if (F.gcs != null) neu.push('Glasgow ' + F.gcs);
+    F.extra.neuro.forEach(function (x) { neu.push(lc1(x)); });
+    out.push(sent(neu));
+    var rs = [];
+    if (F.vent) rs.push(/ar ambiente/i.test(F.vent) ? 'ventilando em ar ambiente' : 'suporte ventilatório: ' + F.vent);
+    out.push(sent(rs.concat(clauses(F.exam.resp))));
+    var cv = [];
+    if (F.dva === 'nao') cv.push('não faz uso de droga vasoativa');
+    else if (/^texto:/.test(F.dva || '')) cv.push('vasoativos: ' + F.dva.slice(6));
+    out.push(sent(cv.concat(clauses(F.exam.cardio))));
+    out.push(sent(clauses(F.exam.gi).concat(F.extra.gi.map(lc1))));
+    out.push(sent(clauses(F.exam.renal)));
+    out.push(sent(clauses(F.exam.hema)));
+    return out.filter(Boolean).join('\n');
+  }
+
   /* ---------- principal ---------- */
   function generate(inp, opts) {
     opts = opts || {};
     var ref = opts.date ? parseISO(opts.date) : new Date();
+    REF = ref;
     var size = opts.size || 'padrao';
-    var evoRaw = String(inp.evo || ''), bhRaw = String(inp.bh || ''), exaRaw = String(inp.exa || ''), ctxRaw = String(inp.ctx || '');
+    var rt = route(inp);
+    var evoRaw0 = rt.evo, bhRaw0 = rt.bh, exaRaw = rt.exa, ctxRaw = String(inp.ctx || '');
+    var F = isForm(evoRaw0) ? parseForm(evoRaw0) : null;
+    var BHP = parseBH(bhRaw0);
+    var evoRaw = F ? synthEvo(F) : evoRaw0;
+    var bhRaw = BHP ? BHP.syn : bhRaw0;
+    var rangesFromText = !BHP && vitals(bhRaw0).pamMin != null;
+    var WIN = BHP ? 'no período registrado' : (F && !rangesFromText ? 'no momento' : 'nas últimas 24 h');
+    var WINC = cap1(WIN);
     var all = [evoRaw, bhRaw, ctxRaw].join('\n');
     var gaps = [], removedGeneric = [], recog = [];
     function gap(t) { gaps.push(t); }
@@ -554,17 +873,20 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var ageM = /(?:Idade\s*[:=]?\s*(\d{1,3}))|(?:(\d{1,3})\s*anos)/i.exec(evoRaw + '\n' + ctxRaw);
     var age = ageM ? Number(ageM[1] || ageM[2]) : null;
     if (age != null && (age < 0 || age > 120)) age = null;
-    var fem = (all.match(/\b(?:admitida|internada|extubada|submetida|idosa|colaborativa|feminina|mulher)\b/gi) || []).length;
-    var mas = (all.match(/\b(?:admitido|internado|extubado|submetido|idoso|colaborativo|masculino|homem)\b/gi) || []).length;
+    var sexSrc = all + ' ' + (F ? F.imp.join(' ') + ' ' + F.hma.join(' ') : '');
+    var fem = (sexSrc.match(/\b(?:admitida|internada|extubada|submetida|idosa|colaborativa|feminina|mulher)\b/gi) || []).length;
+    var mas = (sexSrc.match(/\b(?:admitido|internado|extubado|submetido|idoso|colaborativo|masculino|homem)\b/gi) || []).length;
     var sex = fem > mas ? 'f' : (mas > fem ? 'm' : null);
 
-    var cm = findComorb(evoRaw + '\n' + ctxRaw);
+    var cm = findComorb(evoRaw + '\n' + ctxRaw + '\n' + (F ? F.hist : ''));
     var comorb = cm.labels;
     var frail = /fr[áa]gil/i.test(evoRaw + ctxRaw);
 
     /* internação */
     var admM = /(?:admitid[oa]|internad[oa]|admiss[ãa]o|interna[çc][ãa]o)[^.\n]{0,50}?(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i.exec(ctxRaw + '\n' + evoRaw);
     var adm = admM ? dmToDate(admM[1], ref) : null;
+    var admAssumed = false;
+    if (!adm && F && F.admDate) { adm = dmToDate(F.admDate, ref); admAssumed = !!adm; }
     var dday = adm ? daysBetween(adm, ref) + 1 : null;
     if (dday != null && (dday < 1 || dday > 400)) dday = null;
 
@@ -604,8 +926,10 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
         return !(d && hmaS.some(function (y, j) { return j !== i && ctxS.indexOf(y) < 0 && y.indexOf(d.slice(0, 5)) >= 0; }));
       });
     })();
+    if (F && F.hma.length) hmaS = F.hma.slice();
     var dxM = /(?:admitid[oa]|internad[oa]|admiss[ãa]o|submetid[oa])[^.]*?\b(?:com|por|devido a|para)\s+([^,.;]+)/i.exec(hmaS.join('. '));
     var dx = dxM ? cleanSpaces(dxM[1]) : null;
+    if (F && F.dx) dx = F.dx;
     var poText = null, poDay = null;
     var poM = /\b(?:PO|p[óo]s-operat[óo]rio)\b\s*(?:de|d[aeo])?\s*([^,.;(]+(?:\([^)]*\))?(?:,\s*complicad[oa]\s+(?:com|por)\s+[^,.;]+)?)/i.exec(hmaS.join('. '));
     if (poM) {
@@ -634,6 +958,13 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var vit = vitals(bhRaw + '\n' + evoRaw);
     var vitBH = vitals(bhRaw);
     if (vitBH.pamMin != null) { vit.pamMin = vitBH.pamMin; vit.pamMax = vitBH.pamMax; }
+    var fDropped = [];
+    if (F && !BHP) {
+      var fv = F.vit;
+      if (vit.spoMin == null && fv.SATO2 != null) { if (fv.SATO2 >= 50 && fv.SATO2 <= 100) vit.spoMin = vit.spoMax = fv.SATO2; else fDropped.push('SpO2 ' + fv.SATO2); }
+      if (vit.frMin == null && fv.FR != null) { if (fv.FR >= 5 && fv.FR <= 60) vit.frMin = vit.frMax = fv.FR; else fDropped.push('FR ' + fv.FR); }
+    } else if (F && F.vit.FR != null && !(F.vit.FR >= 5 && F.vit.FR <= 60)) fDropped.push('FR ' + F.vit.FR + ' (formulário)');
+    if (BHP && BHP.dropped.length) fDropped = fDropped.concat(BHP.dropped);
     var o2 = o2Support(bhRaw + '\n' + evoRaw);
     var bal = balance(bhRaw + '\n' + evoRaw);
     var gli = glicemias(bhRaw + '\n' + evoRaw);
@@ -644,7 +975,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var rass = rassM ? rassM[1].replace(/\s/g, '').replace(/[−–]/g, '-') : null;
     var sedated = /sedad[oa]|seda[çc][ãa]o|midazolam|propofol|fentanil|dexmedetomidina|precedex/i.test(all);
 
-    var ex = parseExams(exaRaw, ref);
+    var ex = parseLaudo(exaRaw, ref) || parseExams(exaRaw, ref);
     var SE = ex.series;
     arrowFallback(evoRaw, 'Cr', 'Cr|Creatinina', SE);
     arrowFallback(evoRaw, 'PCR', 'PCR', SE);
@@ -653,12 +984,18 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
 
     var atbM = /(piperacilina[-\s]?tazobactam|pip-?tazo|meropenem|vancomicina|cefepime|ceftriaxona|ampicilina(?:-sulbactam)?|polimixina(?: B)?|teicoplanina|linezolida|azitromicina|claritromicina|oxacilina|clindamicina|metronidazol|ciprofloxacino|levofloxacino|amicacina|gentamicina|ceftazidima|ertapenem|tigeciclina)(?:[^.\n;,]{0,12}?\bD(\d{1,2})\b)?/gi;
     var atbs = [], am;
-    while ((am = atbM.exec(all))) atbs.push(lc1(am[1]) + (am[2] ? ' (D' + am[2] + ')' : ''));
+    var atbText = all + (F ? '\n' + F.atb : '');
+    while ((am = atbM.exec(atbText))) atbs.push(lc1(am[1]) + (am[2] ? ' (D' + am[2] + ')' : ''));
     atbs = uniq(atbs);
 
+    var infCtx = atbs.length > 0 || /febre|infec[çc]|sepse|pneumonia|cultura|foco|\bITU\b|abscesso/i.test(evoRaw + ' ' + ctxRaw + ' ' + (F ? F.hma.join(' ') + ' ' + F.imp.join(' ') : ''));
     /* ---------- seção: COMORBIDADES ---------- */
-    var secCom = comorb.length ? comorb.join('; ') + '.' : '';
-    if (!comorb.length) gap('Comorbidades e problemas prévios não identificados nos textos colados.');
+    var secCom = comorb.length ? comorb.join('; ') + '.' : (F && F.hist ? endDot(F.hist) : '');
+    if (F && secCom) {
+      if (F.allergy) secCom += ' Alergias: ' + lc1(endDot(F.allergy));
+      if (F.med) secCom += ' Medicação de uso prévio: ' + lc1(endDot(F.med));
+    }
+    if (!comorb.length && !(F && F.hist)) gap('Comorbidades e problemas prévios não identificados nos textos colados.');
 
     /* ---------- seção: HMA ---------- */
     var secHma = hmaS.map(function (s) { return endDot(cap1(s)); }).join(' ');
@@ -680,12 +1017,19 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       var o2dl = comorb.filter(function (c) { return /^O2 domiciliar/.test(c); })[0];
       if (o2dl) cShow.push(o2dl);
       s1 += ', com ' + listJoin(cShow);
-    }
+    } else if (F && /^sem diagn|^nega|^nenhum/i.test(F.hist)) s1 += ', sem diagnósticos prévios';
     if (dday != null) s1 += ', no ' + dday + 'º dia de internação';
     if (poText && dx === 'pós-operatório de ' + poText) {
       s1 += (dday != null ? ', ' : ', ') + (poDay != null ? 'no ' + poDay + 'º dia de pós-operatório de ' : 'em pós-operatório de ') + lc1(poText);
     } else if (dx) s1 += (dday != null ? ' por ' : ', internado(a) por ').replace('internado(a)', sex === 'f' ? 'internada' : sex === 'm' ? 'internado' : 'internado(a)') + lc1(dx);
     if (s1 !== 'Paciente') P1.push(endDot(s1));
+    if (F && F.imp.length) {
+      F.imp.forEach(function (s) {
+        var t = s.replace(/^Paciente\s+(?:admitid[oa]|internad[oa])\s+[^,]*,\s*/i, 'Paciente ');
+        t = degeneric(t, removedGeneric);
+        if (t) P1.push(endDot(t));
+      });
+    }
 
     var pcr = SE.PCR, leu = SE.Leuco;
     var infParts = [], anyUp = false;
@@ -702,13 +1046,14 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       else infParts.push('leucócitos mantidos (' + tl.text + (tl.when ? ', de ' + tl.when : '') + ')');
     }
     if (infParts.length) {
-      var lead = anyUp ? 'Mantém vigilância infecciosa ativa diante de ' : 'Em acompanhamento infeccioso, com ';
+      var lead = anyUp ? (infCtx ? 'Mantém vigilância infecciosa ativa diante de ' : 'Sem foco infeccioso descrito nos dados, com ') : (infCtx ? 'Em acompanhamento infeccioso, com ' : 'Marcadores inflamatórios: ');
       P1.push(endDot(lead + listJoin(infParts)));
     }
     if (vit.tax != null) {
-      var taxTxt = 'Temperatura axilar máxima de ' + fmtDec(vit.tax) + ' °C nas últimas 24 h';
+      var taxTxt = 'Temperatura máxima de ' + fmtDec(vit.tax) + ' °C ' + WIN;
       if (!hasNum(sentText('infec'), [fmtDec(vit.tax)])) P1.push(endDot(taxTxt));
     }
+    if (!BHP && F && F.vit.TEMPERATURA >= 30 && F.vit.TEMPERATURA <= 43) P1.push(endDot('Temperatura de ' + fmtDec(F.vit.TEMPERATURA) + ' °C no momento'));
     if (size !== 'curta') S('infec').forEach(function (s) { P1.push(endDot(s)); });
     else if (atbs.length && !infParts.length) P1.push(endDot('Em uso de ' + listJoin(atbs)));
     if (size === 'curta' && atbs.length && infParts.length) P1.push(endDot('Em uso de ' + listJoin(atbs)));
@@ -732,9 +1077,11 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       var ptxt = vit.pamMinFromEvent ? 'PAM de ' + vit.pamMin + ' mmHg às ' + vit.pamEvTime : 'PAM mínima de ' + vit.pamMin + (vit.pamMax != null ? ' e máxima de ' + vit.pamMax : '') + ' mmHg';
       var pas = vit.pasMin != null ? ' (PAS ' + vit.pasMin + ' a ' + vit.pasMax + ' mmHg)' : '';
       var low = (vit.pamMin < 65 && !dva.use) ? ', com PAM mínima abaixo de 65 mmHg sem droga vasoativa' : '';
-      hemoParts.push('Nas últimas 24 h, ' + ptxt + pas + low);
+      hemoParts.push(WINC + ', ' + ptxt + pas + low);
     } else if (vit.pasMin != null) {
-      hemoParts.push('Nas últimas 24 h, PAS de ' + vit.pasMin + ' a ' + vit.pasMax + ' mmHg');
+      hemoParts.push(WINC + ', PAS de ' + vit.pasMin + ' a ' + vit.pasMax + ' mmHg');
+    } else if (F && F.vit.PAM != null && F.vit.PAM >= 30 && F.vit.PAM <= 220) {
+      hemoParts.push('No momento, PAM de ' + F.vit.PAM + ' mmHg' + (F.vit.PAS != null && F.vit.PAD != null ? ' (PAS ' + F.vit.PAS + ' e PAD ' + F.vit.PAD + ' mmHg)' : '') + (F.vit.FC != null && F.vit.FC >= 20 && F.vit.FC <= 250 ? ' e FC de ' + F.vit.FC + ' bpm' : ''));
     }
     if (vit.fcMin != null && !hasNum(hemoOrig, [vit.fcMin])) hemoParts.push('FC de ' + vit.fcMin + ' a ' + vit.fcMax + ' bpm');
     hemoParts.forEach(function (p) { P2.push(endDot(p)); });
@@ -764,7 +1111,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       var o3 = [];
       if (vit.spoMin != null) o3.push('SpO2 de ' + vit.spoMin + (vit.spoMax !== vit.spoMin ? ' a ' + vit.spoMax : '') + '%' + (o2.ra ? ' em ar ambiente' : ''));
       if (vit.frMin != null) o3.push('FR de ' + vit.frMin + (vit.frMax !== vit.frMin ? ' a ' + vit.frMax : '') + ' irpm');
-      respParts.push('Nas últimas 24 h, ' + listJoin(o3));
+      respParts.push(WINC + ', ' + listJoin(o3));
     }
     respParts.forEach(function (p) { P2.push(endDot(p)); });
     if (size !== 'curta') respSents.forEach(function (s) { P2.push(endDot(s)); });
@@ -788,7 +1135,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       if (bal.diur != null) diurTxt = bal.qual ? bal.qual + ' (' + fmtInt(bal.diur) + ' mL' + (bal.diurKg != null ? '; ' + fmtDec(bal.diurKg) + ' mL/kg/h' : '') + ')' : 'diurese de ' + fmtInt(bal.diur) + ' mL' + (bal.diurKg != null ? ' (' + fmtDec(bal.diurKg) + ' mL/kg/h)' : '');
       else if (bal.diurKg != null) diurTxt = (bal.qual || 'diurese') + ' (' + fmtDec(bal.diurKg) + ' mL/kg/h)';
       else if (bal.qual) diurTxt = bal.qual;
-      if (bal.bh != null) bhTxt = 'balanço hídrico ' + (bal.bh < 0 ? 'negativo' : bal.bh > 0 ? 'positivo' : 'zerado') + ' de ' + fmtInt(Math.abs(bal.bh)) + ' mL em 24 h' + (bal.acc != null ? ' (acumulado de ' + (bal.acc < 0 ? '−' : '+') + fmtInt(Math.abs(bal.acc)) + ' mL' + (bal.accLbl ? ' em ' + bal.accLbl : '') + ')' : '');
+      if (bal.bh != null) bhTxt = 'balanço hídrico ' + (bal.bh < 0 ? 'negativo' : bal.bh > 0 ? 'positivo' : 'zerado') + ' de ' + fmtInt(Math.abs(bal.bh)) + ' mL ' + (BHP ? 'no período registrado' : 'em 24 h') + (bal.acc != null ? ' (acumulado de ' + (bal.acc < 0 ? '−' : '+') + fmtInt(Math.abs(bal.acc)) + ' mL' + (bal.accLbl ? ' em ' + bal.accLbl : '') + ')' : '');
       else if (bal.bhSign) bhTxt = 'balanço hídrico ' + (bal.bhSign < 0 ? 'negativo' : 'positivo');
       if (cr) {
         var tc = trendStr(cr);
@@ -815,7 +1162,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     var metaOrig = sentText('meta');
     if (size !== 'curta') S('meta').forEach(function (s) { P3.push(endDot(s)); });
     if (gli && !hasNum(metaOrig, [gli.min])) {
-      var gt = 'Glicemias capilares de ' + gli.min + ' a ' + gli.max + ' mg/dL nas últimas 24 h';
+      var gt = (gli.min === gli.max ? 'Glicemia capilar de ' + gli.min : 'Glicemias capilares de ' + gli.min + ' a ' + gli.max) + ' mg/dL ' + WIN;
       if (gli.low) gt += ', com hipoglicemia de ' + gli.low.v + ' mg/dL' + (gli.low.t ? ' às ' + gli.low.t : '');
       P3.push(endDot(gt));
     }
@@ -862,7 +1209,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     if (vit.frMax != null && vit.frMax >= 25) crit.push({ t: 'taquipneia (FR até ' + vit.frMax + ' irpm)', pr: 5 });
     if (vit.tax != null && vit.tax >= 37.8) crit.push({ t: 'febre (Tax máx ' + fmtDec(vit.tax) + ' °C)', pr: 6 });
     if (lacS && lastOf(lacS).v > 2) crit.push({ t: 'hiperlactatemia (lactato ' + lastOf(lacS).raw + ')', pr: 3 });
-    if (anyUp) {
+    if (anyUp && infCtx) {
       var up = [];
       if (pcr && dirOf(pcr) > 0) up.push('PCR ' + trendStr(pcr).text);
       if (leu && dirOf(leu) > 0) up.push('leucócitos ' + trendStr(leu).text);
@@ -879,6 +1226,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     if (hbS && lastOf(hbS).v < 7) crit.push({ t: 'anemia (Hb ' + lastOf(hbS).raw + ')', pr: 5 });
     var plS = SE.Plaq;
     if (plS && lastOf(plS).unit === 'mil' && lastOf(plS).v < 50) crit.push({ t: 'plaquetopenia (' + lastOf(plS).raw + ' mil)', pr: 5 });
+    if (/programa[çc][ãa]o cir[úu]rgica|aguarda (?:a )?cirurgia|pr[ée]-operat[óo]rio/i.test(all + ' ' + (F ? F.hma.join(' ') + ' ' + F.dx + ' ' + F.imp.join(' ') : ''))) crit.push({ t: 'programação cirúrgica' + (dx ? ' (' + lc1(dx.replace(/\s*com programa[çc][ãa]o cir[úu]rgica/i, '')) + ')' : '') + (F && F.planExam ? ', com ' + F.planExam + ' solicitado' : ''), pr: 4 });
     crit.sort(function (a, b) { return a.pr - b.pr; });
     var maxC = size === 'curta' ? 3 : (size === 'detalhada' ? 99 : 6);
     var critShow = crit.slice(0, maxC).map(function (c) { return c.t; });
@@ -889,7 +1237,9 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
       gap('ATENÇÃO: nenhum critério objetivo de permanência em UTI foi identificado nos dados colados (DVA, suporte ventilatório, PAM, Glasgow/RASS, lactato, tendência dos exames). Confira se faltam dados antes de assinar.');
     }
 
-    var paras = [P1, P2, P3, P4].map(function (p) { return p.join(' '); }).filter(Boolean);
+    var PL = [];
+    if (F && F.plan.length && size !== 'curta') PL.push(endDot('Plano: ' + F.plan.map(function (p) { return /^[A-Z][a-zà-ÿ]/.test(p) ? lc1(p) : p; }).join('; ')));
+    var paras = [P1, P2, P3, PL, P4].map(function (p) { return p.join(' '); }).filter(Boolean);
     var secSum = paras.join('\n\n');
 
     /* ---------- seção: LISTA DE PROBLEMAS E EXAMES ---------- */
@@ -926,7 +1276,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     if (rnL.length) prob.push('Renal: ' + rnL.join('; '));
     var meL = [];
     ['K', 'Na', 'Mg', 'Lac', 'pH', 'HCO3'].forEach(function (k) { if (SE[k]) { var t = trendStr(SE[k]); meL.push(SE[k].a.label + ' ' + t.text + (t.when && SE[k].pts.length > 1 ? ' (' + t.when + ')' : '')); } });
-    if (gli) meL.push('glicemias ' + gli.min + ' a ' + gli.max + ' mg/dL' + (gli.low ? ', hipoglicemia ' + gli.low.v + (gli.low.t ? ' às ' + gli.low.t : '') : ''));
+    if (gli) meL.push('glicemia' + (gli.min === gli.max ? ' ' + gli.min : 's ' + gli.min + ' a ' + gli.max) + ' mg/dL' + (gli.low ? ', hipoglicemia ' + gli.low.v + (gli.low.t ? ' às ' + gli.low.t : '') : ''));
     if (meL.length) prob.push('Metabólico e eletrolítico: ' + meL.join('; '));
     var hmL = [];
     ['Hb', 'Plaq', 'INR'].forEach(function (k) { if (SE[k]) { var t = trendStr(SE[k]); hmL.push(SE[k].a.label + ' ' + t.text + (t.when && SE[k].pts.length > 1 ? ' (' + t.when + ')' : '')); } });
@@ -937,6 +1287,8 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     if (hpL.length) prob.push('Abdominal e hepático: ' + hpL.join('; '));
     var other = ex.imaging.filter(function (s) { return !/cultura|aspirado|swab|t[óo]rax|pulm|\bRx\b|\beco\b|ecocardio|cr[âa]nio|enc[ée]falo|\bEEG\b|abdom|\bUSG\b/i.test(s); });
     if (other.length) prob.push('Outros exames: ' + other.join('; '));
+    if (F && F.devices && !/^sem\b|^nega/i.test(F.devices)) prob.push('Dispositivos: ' + F.devices);
+    if (F && F.cult && !/^sem\b|^nega/i.test(F.cult)) prob.push('Culturas: ' + F.cult);
     var secProb = prob.map(function (p, i) { return (i + 1) + ') ' + endDot(p); }).join('\n');
     if (!prob.length) gap('Lista de problemas vazia: não encontrei exames nem dados estruturados. Cole os exames com data.');
 
@@ -958,12 +1310,21 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     if ((/taquip|dispneia|desconforto resp/i.test(evoRaw)) && vit.frMin == null) gap('Respiratório: frequência respiratória numérica não encontrada ("taquipneico" e "dispneia" não bastam).');
     if (ex.undated) gap('Exames sem data: a tendência aparece, mas sem "desde quando". Cole os exames com a data de coleta.');
     if (!Object.keys(SE).length) gap('Nenhum exame laboratorial com valor foi reconhecido. Cole os exames no formato "26/10: Cr 1,20 | K 3,4 | PCR 20".');
+    if (F && F.dva === 'ambiguo') gap('Vasoativos: o campo "Inotrópico e vasoativos" veio sem marcação (aparecem "Não" e "Sim" juntos). Informe se há DVA.');
+    if (F && !F.plan.some(function (p) { return /dieta/i.test(p); })) gap('Dieta: opções do formulário sem marcação; informe a dieta atual.');
+    if (fDropped.length) gap('Valores improváveis desconsiderados (provável erro de aferição ou digitação): ' + fDropped.join('; ') + '. Confira no prontuário.');
+    if (BHP) gap('Planilha de BH: as colunas de hora se perdem ao copiar, então mínimos e máximos valem para o período registrado (' + BHP.n + ' aferições), não para 24 h completas, e o horário de cada valor não aparece.');
+    if (BHP && BHP.perda != null && !BHP.outrasElim && !/peso\s*[:=]?\s*\d/i.test(all)) gap('Diurese em mL/kg/h não calculada: faltam o peso e as horas de registro (informe no campo de observações, ex.: "peso 70 kg").');
+    if (admAssumed) gap('Data da internação assumida pela data do formulário de admissão (' + fmtDM(adm) + '). Confira.');
+    if (age == null) gap('Idade não encontrada nos textos colados (informe no campo de observações, ex.: "78 anos").');
+    if (ex.stale && ex.stale.length) gap('Exames sem resultado nos últimos 3 dias, ignorados na tendência: ' + ex.stale.join(', ') + '.');
     if (dday == null) gap('Data da internação não encontrada: o dia de internação foi omitido. Informe no campo de observações (ex.: "internação em 17/10").');
     var gu = uniq(removedGeneric);
     if (gu.length) gap('Expressões genéricas removidas do texto (' + gu.join('; ') + '). Confira se o dado objetivo correspondente aparece acima.');
 
     /* ---------- dados reconhecidos ---------- */
     function rc(label, value) { recog.push({ label: label, value: value || null }); }
+    rc('Formatos lidos', [F ? 'formulário de evolução' : null, BHP ? 'planilha de BH' : null, ex.laudo ? 'laudo comparativo' : null].filter(Boolean).join(', ') || null);
     rc('Idade', age != null ? age + ' anos' : null);
     rc('Sexo', sex === 'f' ? 'feminino' : sex === 'm' ? 'masculino' : null);
     rc('Internação', adm ? fmtDM(adm) + (dday != null ? ' (dia ' + dday + ')' : '') : null);
@@ -977,7 +1338,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     rc('RASS', rass);
     rc('Diurese', bal.diur != null ? fmtInt(bal.diur) + ' mL' : null);
     rc('Balanço hídrico', bal.bh != null ? (bal.bh < 0 ? '−' : '+') + fmtInt(Math.abs(bal.bh)) + ' mL' : null);
-    rc('Glicemias', gli ? gli.min + ' a ' + gli.max + ' mg/dL' : null);
+    rc('Glicemias', gli ? (gli.min === gli.max ? gli.min : gli.min + ' a ' + gli.max) + ' mg/dL' : null);
     rc('Antibióticos', atbs.length ? atbs.join(', ') : null);
     rc('Exames em série', Object.keys(SE).length ? Object.keys(SE).map(function (k) { return SE[k].a.label; }).join(', ') : null);
 
@@ -1123,7 +1484,7 @@ details.recog summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--
     setStatus('Cole os dados e clique em Gerar avaliação.');
   });
 
-  var EX = {"evo":"EVOLUÇÃO MÉDICA - PLANTÃO NOTURNO - 26/10/2026\nPaciente: TESTE EXEMPLO DA SILVA   Pront: 4521789   CPF 123.456.789-09   Nasc: 03/02/1944\nFeminina, 82 anos. HAS, DM2 insulinodependente (Lantus), DPOC com O2 domiciliar 1 L/min, ICC com FE 45%. Admitida em 17/10/2026 com choque séptico de foco pulmonar (pneumonia), IOT por 4 dias, extubada em 21/10. Noradrenalina suspensa em 22/10.\n\nPaciente segue em grave estado geral. Estabilidade hemodinâmica com boa curva pressórica, já sem vasopressor há 04 dias. Dispneia aos esforços, sob CN 2lpm com oximetria satisfatória. Vígil, colaborativa, ECG 15.\nDiurese espontânea abundante, BH negativo. Escórias com discreta piora (Cr 1,16 > 1,20). K 3,4, em reposição VO. Dieta VO com aceitação parcial. Abdome distendido, RHA presentes, sem evacuar há 3 dias.\nHipoglicemia de 54 mg/dL às 04h, tratada com glicose 50%, mesmo após redução do Lantus de 20 para 14 UI ontem. Conduta: suspenso Lantus, mantido esquema de correção.\nMantém piperacilina-tazobactam (D8). Segue fisioterapia motora e respiratória.","bh":"BALANÇO HÍDRICO 24h (26/10 07h a 27/10 07h)\nEntradas: 1850 mL | Saídas: 2900 mL (diurese 2700 mL = 1,1 mL/kg/h) | BH: -1050 mL | acumulado 3 dias: -2400 mL\nSSVV 24h: FC 78-102 bpm | PAM mín 58 / máx 94 mmHg | PAS mín 92 / máx 148 mmHg | FR 20-26 irpm | SpO2 92-96% em CN 2 L/min | Tax máx 37,6 °C\nPAM 58 mmHg às 03h40, durante diurese de 400 mL/h; sem DVA; cristaloide 250 mL com recuperação para PAM 72.\nGlicemias capilares: 04h 54 | 08h 132 | 12h 118 | 18h 96 | 22h 104","exa":"24/10: Leuco 12.800 | PCR 2 mg/dL | Cr 1,10 | K 3,8\n25/10: Hb 9,8 | Leuco 14.200 | Plaq 245 mil | PCR 7 mg/dL | Cr 1,16 | Ur 48 | Na 138 | K 3,6\n26/10: Hb 9,6 | Leuco 16.000 | Plaq 238 mil | PCR 20 mg/dL | Cr 1,20 | Ur 52 | Na 137 | K 3,4 | Mg 1,8\nHemoculturas 17/10: sem crescimento. Aspirado traqueal 18/10: Klebsiella pneumoniae sensível a piperacilina-tazobactam.\nRx de tórax 26/10: opacidade em base direita, sem novas áreas de consolidação.","ctx":"Internação hospitalar e admissão na UTI em 17/10/2026."};
+  var EX = {"evo":"ADMISSÃO UNIDADES DE TERAPIA INTENSIVA\n\nMédico Assistente: \n\nHistória da moléstia atual: \nPACIENTE SOFREU QUEDA DA PRÓPRIA ALTURA E COM TRAUMA NO QUADRIL DIREITO.\nDIAGNÓSTICO DE FRATURA IMPACTADA DO COLO DO FÊMUR DIREITO E NECESSIDADE DE TRATAMENTO CIRÚRGICO.\nDiagnóstico: \nFratura de fêmur a D com programação cirúrgica\nHistória pregressa: \nSem diagnósticos prévios\nMedicação de uso prévio: \nNega\nAlergias: \nNega\nAntimicrobianos e datas: \nSem\nCulturas/Antibiogramas e datas: \nSem\nDispositivos em uso e datas: \nAVP\nRISCOS ASSISTENCIAIS\n# Risco de TEV: Baixo risco\n# Risco de queda: Risco moderado\n# Risco de lesão de pressão : 27/10/2026 - 19 - sem risco\n# Carga do cuidado (Atenção se NAS >50 | FUGULIN >20): 36,9\n\n\nNO MOMENTO\nGERAL:\n- SINAIS VITAIS: PAS: 131 | PAD: 62 | PAM: 89 | FC: 78 | FR: 112 |  SAT.O2: 96 | TEMPERATURA: 36 | DOR: 0\nNEUROLÓGICO:\nCAM-ICU:  | GLASGOW: 15 - normal\n- SEDAÇÃO: Qual, e, dose? sem \n- EXAME CLÍNICO: vigil e orientada\nRESPIRATÓRIO:  \n- SUPORTE VENTILATÓRIO: Ar ambiente \n- EXAME CLÍNICO: MV+ sem RA\n\nCARDIOVASCULAR | EXTREMIDADES:   \n- INOTRÓPICO E VASOATIVOS:  Não   Sim\n- EXAME CLÍNICO: RCR em 2T, BNF sem sopros\n\nGASTROINTESTINAL:   \n- DIETA:  Oral   Enteral  Parenteral   ZERO \n- EVACUAÇÕES: 0\n- EXAME CLÍNICO RHA+ sem sinais de irritação\n\nRENAL | METABÓLICO\n- USO DE INSULINA:Não Subcutânea (qtde):  EV (qtde): \n- Renal: função renal preservada\n- OUTROS:  Não  Sim  \n\nHEMATOLÓGICO | INFLAMATÓRIO: \n- \n\nAVALIAÇÃO | IMPRESSÃO\n- Paciente admitida após queda da própria altura com fratura de fêmur a direita, vigil e orientada, com hipoacusia, ventilando espontaneamente, hemodinamicamente estável, diurese presente, com bom controle álgico, com programação cirurgica.\n\nPLANO TERAPÊUTICO DA ADMISSÃO \nDieta zero para cirurgia\nSolicito ECOTT\nControle álgico\nPrevisão de alta\n < 48h\n 48h - 5 dias\n > 5 dias\nFamilia e/ou pacientes cientes do plano terapêutico:  Sim Não (Porque__________)\n\n\n-----------------------------------------------------\nDr. Auro Vieira de Paiva Junior CRM 25495","bh":"Parâmetros Un med 07 08 09 10 11 12 13 14 15 16 17 18 BP 19 20 21 22 23 24 01 02 03 04 05 06 BP Total 27/10/2026 PAS mmHg 173 149 166 148 139 139 150 147 142 PAD mmHg 119 81 70 77 71 71 76 76 73 PAM mmHg 133 104 101 101 94 97 101 102 99 FR mrm 107 24 29 22 29 32 26 FC bpm 95 81 89 88 88 82 88 83 80 Sat O2 % 92 97 96 92 93 95 96 94 95 Temp °C 36,1 36,3 36,6 36,4 Escala dor Pontos Faces Faces Faces Faces Ponto dor 0 0 0 0 Decúbito Dorsal Dorsal Dorsal Dorsal Glic cap mg/dL 110 Glicemia Eliminações ml 200 200 0 200 Diurese espontânea - Volume 200 200 0 Suporte Nutricional ml 150 150 300 150 750 0 750 Água via enteral/oral 50 50 100 50 250 0 250 Dieta via oral 100 100 200 100 500 0 500 Medicamentos ml 10 10 0 10 Medicamento oral 10 10 0 10 Resultado BH 0 0 Da hora ml -50 150 310 150 560 0 560 Balanço Hídrico: Total Ganho: 760,00 Total Perda: 200,00 Balanço (Ganho - Perda): 560,00","exa":"LAUDO COMPARATIVO\n \nResultado atual\nResultados anteriores\nO.S/Data O.S.\n942-67870-25\n27/10/2026\n02:08:00\n102-67543-8310\n04/12/2025\n08:53:00\n102-67209-7347\n04/01/2025\n10:10:00\n237-66735-19452\n18/09/2023\n18:23:36\n102-66729-8907\n12/09/2023\n09:23:00\n102-66516-8645\n11/02/2023\n09:25:00\n102-66348-6142\n27/08/2022\n09:05:00\n242-65704-6731\n21/11/2020\n09:23:22\n237-65038-5620\n25/01/2019\n09:19:26\nGLICOSE\n--\n86\n89\n--\n92\n--\n80\n88\n--\nUREIA\n26\n28\n28\n--\n36\n--\n40\n--\n--\nCREATININA\n0,88\n1,01\n1,00\n--\n0,97\n--\n0,91\n--\n--\nSÓDIO\n139\n141\n141\n--\n139\n--\n143\n--\n--\nPOTÁSSIO\n4,0\n4,2\n4,2\n--\n4,5\n--\n4,4\n--\n--\nCLORO\n--\n--\n--\n--\n--\n--\n--\n--\n--\nCÁLCIO\n--\n9,1\n9,0\n--\n9,0\n--\n9,1\n--\n--\nCÁLCIO IÔNICO\n1,13\n--\n--\n--\n--\n--\n--\n--\n--\nMAGNÉSIO\n2,0\n--\n--\n--\n2,2\n--\n2,1\n--\n--\nFÓSFORO\n4,3\n--\n--\n--\n--\n--\n--\n--\n--\nDHL\n260\n--\n--\n--\n--\n--\n--\n--\n--\nULTRA PCR\n--\n--\n0,64\n--\n--\n--\n--\n--\n58,85\nPROT TOTAIS\n--\n--\n6,8\n--\n--\n--\n--\n--\n--\nALBUMINA\n--\n--\n4,2\n--\n--\n--\n--\n--\n--\nBIL DIRETA\n0,38\n0,35\n0,31\n--\n--\n--\n--\n--\n--\nBIL TOTAIS\n0,58\n0,72\n--\n--\n--\n--\n0,95\n--\n--\nTGO\n20\n--\n--\n--\n20\n20\n21\n--\n--\nTGP\n22\n23\n21\n--\n21\n21\n19\n--\n--\nGGT\n19\n14\n15\n--\n--\n--\n21\n--\n--\nFOS. ALCALINA\n56\n60\n64\n--\n--\n--\n--\n--\n--\nAMILASE\n--\n--\n--\n--\n--\n--\n--\n--\n--\nLIPASE\n--\n--\n--\n--\n--\n--\n--\n--\n--\nCPK\n--\n--\n162\n--\n--\n130\n125\n433\n--\nCKMB-MASSA\n--\n--\n--\n--\n--\n--\n--\n--\n--\nTROPO T ULTRA\n0,006\n--\n--\n--\n--\n--\n--\n--\n--\nMIOGLOBINA\n--\n--\n--\n--\n--\n--\n--\n--\n--\nPRO BNP\n--\n--\n--\n--\n--\n--\n--\n--\n--\nPROCALCITONINA\n--\n--\n--\n--\n--\n--\n--\n--\n--\nVANCOMICINA\n--\n--\n--\n--\n--\n--\n--\n--\n--\nAMICACINA\n--\n--\n--\n--\n--\n--\n--\n--\n--\nGENTAMICINA\n--\n--\n--\n--\n--\n--\n--\n--\n--\nTACROLIMUS\n--\n--\n--\n--\n--\n--\n--\n--\n--\nCLOSTRIDIUM\n--\n--\n--\n--\n--\n--\n--\n--\n--\nLACTATO\n1,5\n--\n--\n--\n--\n--\n--\n--\n--\nDEDIMERO\n--\n--\n--\n370\n--\n--\n--\n--\n--\nPCR\n1,72\n--\n--\n--\n--\n--\n--\n--\n--\nLAUDO COMPARATIVO\n \nResultado atual\nResultados anteriores\nO.S/Data O.S.\n942-67870-25\n27/10/2026\n02:08:00\n102-67543-8310\n04/12/2025\n08:53:00\n102-67209-7347\n04/01/2025\n10:10:00\n237-66735-19452\n18/09/2023\n18:23:36\n102-66729-8907\n12/09/2023\n09:23:00\n102-66348-6142\n27/08/2022\n09:05:00\n237-65038-5620\n25/01/2019\n09:19:26\n237-65035-12082\n22/01/2019\n13:29:35\n102-64594-7972\n07/11/2017\n10:22:00\nHEMATÓCRITO\n43,6\n44,2\n45,4\n--\n47,5\n46,3\n42,3\n42,6\n47,4\nHEMÁCIAS\n4,79\n5,04\n5,31\n--\n5,42\n5,46\n4,97\n5,06\n5,51\nHEMOGLOBINA\n14,3\n15,6\n16,1\n--\n16,2\n15,8\n--\n--\n17,0\nLEUCÓCITOS\n10.630\n6.670\n6.100\n--\n6.500\n7.000\n5.000\n14.000\n7.400\nSEGMENTADOS\n89\n55\n55\n--\n53\n56\n64\n86\n59\nBASTONETES\n0\n0\n0\n--\n0\n0\n0\n4\n0\nPLAQUETAS\n178\n--\n--\n--\n--\n--\n194\n172\n--\nTAP-PLASMA PAC (SEG)\n14,20\n--\n--\n--\n--\n--\n--\n--\n--\nRNI\n1,23\n--\n--\n--\n--\n--\n--\n--\n--\nTTPA-PLASMA PAC (SEG)\n33,6\n--\n--\n--\n--\n--\n--\n--\n--\nTTPA-RELAÇÃO (P/C)\n1,13\n--\n--\n--\n--\n--\n--\n--\n--\nDIMEROD\n--\n--\n--\n370\n--\n--\n--\n--\n--\nFIBRINO\n223,0\n--\n--\n--\n--\n--\n--\n--\n--\nANTIXA\n--\n--\n--\n--\n--\n--\n--\n--\n--","ctx":""};
   $('b-example').addEventListener('click', function () {
     $('f-evo').value = EX.evo; $('f-bh').value = EX.bh; $('f-exa').value = EX.exa; $('f-ctx').value = EX.ctx;
     $('f-date').value = '2026-10-27'; counts();
